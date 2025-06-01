@@ -445,6 +445,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "golem-tts"
+version = "0.0.1"
+dependencies = [
+ "golem-rust",
+ "log",
+ "mime",
+ "nom",
+ "reqwest",
+ "thiserror",
+ "wasi-logger",
+ "wit-bindgen 0.40.0",
+]
+
+[[package]]
+name = "golem-tts-elevenlabs"
+version = "0.0.1"
+dependencies = [
+ "base64 0.22.1",
+ "golem-rust",
+ "golem-tts",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.40.0",
+]
+
+[[package]]
 name = "golem-wasm-rpc"
 version = "1.2.2-dev.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
