@@ -1,15 +1,25 @@
 mod client;
-// mod voices;
+
+// use golem_tts::exports::golem::tts::advanced::Guest as AdvancedGuest;
+
+// #[allow(unused_imports)]
+// use golem_tts::exports::golem::tts::advanced::SynthesisMetadata;
+// use golem_tts::exports::golem::tts::streaming::Guest as StreamingGuest;
+
 #[allow(unused_imports)]
-use golem_tts::exports::golem::tts::synthesis::{
-    AudioConfig, Guest as SynthesisGuest, SynthesisOptions,
-};
+// use golem_tts::exports::golem::tts::synthesis::{AudioConfig, Guest as SynthesisGuest, TextInput};
+use golem_tts::exports::golem::tts::types::LanguageCode;
+use golem_tts::exports::golem::tts::voices::AudioFormat;
 use golem_tts::exports::golem::tts::voices::{
-    AudioFormat, Guest as VoicesGuest, GuestVoice, GuestVoiceResults, LanguageInfo, TtsError,
-    Voice, VoiceBorrow, VoiceFilter, VoiceInfo, VoiceResults,
+    Guest as VoicesGuest, GuestVoice, GuestVoiceResults, LanguageInfo, TtsError, Voice,
+    VoiceFilter, VoiceInfo, VoiceResults,
 };
-#[allow(unused_imports)]
-use golem_tts::golem::tts::types::{LanguageCode, SynthesisResult, TextInput};
+
+// use golem_tts::exports::golem::tts::voices::TtsError
+// use golem_tts::golem::tts::types::TtsError;
+//
+
+struct ElevenLabsTtsComponent;
 
 #[allow(dead_code)]
 impl GuestVoice for ElevenLabsTtsComponent {
@@ -74,6 +84,10 @@ impl GuestVoice for ElevenLabsTtsComponent {
     }
 }
 
+//
+//
+//
+//
 impl GuestVoiceResults for ElevenLabsTtsComponent {
     fn has_more(&self) -> bool {
         todo!()
@@ -111,38 +125,5 @@ impl VoicesGuest for ElevenLabsTtsComponent {
     }
 }
 
-struct ElevenLabsTtsComponent;
-
-impl SynthesisGuest for ElevenLabsTtsComponent {
-    fn synthesize(
-        _text_input: TextInput,
-        _voice: VoiceBorrow<'_>,
-        _options: Option<SynthesisOptions>,
-    ) -> Result<SynthesisResult, TtsError> {
-        todo!()
-    }
-
-    fn synthesize_batch(
-        _text_inputs: Vec<TextInput>,
-        _voice: VoiceBorrow<'_>,
-        _options: Option<SynthesisOptions>,
-    ) -> Result<Vec<SynthesisResult>, TtsError> {
-        todo!()
-    }
-
-    fn get_timing_marks(
-        _text_input: TextInput,
-        _voice: VoiceBorrow<'_>,
-    ) -> Result<Vec<golem_tts::golem::tts::types::TimingInfo>, TtsError> {
-        todo!()
-    }
-
-    fn validate_input(
-        _text_input: TextInput,
-        _voice: VoiceBorrow<'_>,
-    ) -> Result<golem_tts::golem::tts::synthesis::ValidationResult, TtsError> {
-        todo!()
-    }
-}
-
+// --- Export ---
 golem_tts::export_tts!(ElevenLabsTtsComponent with_types_in golem_tts);

@@ -510,10 +510,11 @@ interface advanced {
 }
 
 world tts-library {
+  export types;
   export voices;
   export synthesis;
-  export streaming;
-  export advanced;
+  //export streaming;
+  //export advanced;
 }
 
 
