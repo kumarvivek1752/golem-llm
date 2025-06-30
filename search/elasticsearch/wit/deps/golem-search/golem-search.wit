@@ -119,10 +119,15 @@ interface core {
   delete: func(index: index-name, id: document-id) -> result<_, search-error>;
   delete-many: func(index: index-name, ids: list<document-id>) -> result<_, search-error>;
   get: func(index: index-name, id: document-id) -> result<option<doc>, search-error>;
+  
+  resource search-stream {
+    get-next: func() -> option<list<search-hit>>;
+    blocking-get-next: func() -> list<search-hit>;
+  } 
 
   // Query
   search: func(index: index-name, query: search-query) -> result<search-results, search-error>;
-  stream-search: func(index: index-name, query: search-query) -> result<stream<search-hit>, search-error>;
+  stream-search: func(index: index-name, query: search-query) -> result<search-stream, search-error>;
 
   // Schema inspection
   get-schema: func(index: index-name) -> result<schema, search-error>;

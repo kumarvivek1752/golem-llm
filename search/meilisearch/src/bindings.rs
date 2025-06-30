@@ -8,12 +8,12 @@ use golem_search::golem::search::types as __with_name0;
 use golem_search::golem::search::core as __with_name1;
 #[cfg(target_arch = "wasm32")]
 #[unsafe(
-    link_section = "component-type:wit-bindgen:0.41.0:golem:search-algolia@1.0.0:search-library:encoded world"
+    link_section = "component-type:wit-bindgen:0.41.0:golem:search-meilisearch@1.0.0:search-library:encoded world"
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1881] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xd4\x0d\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1885] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xd8\x0d\x01A\x02\x01\
 A\x0c\x01B'\x01q\x06\x0findex-not-found\0\0\x0dinvalid-query\x01s\0\x0bunsupport\
 ed\0\0\x08internal\x01s\0\x07timeout\0\0\x0crate-limited\0\0\x04\0\x0csearch-err\
 or\x03\0\0\x01s\x04\0\x0aindex-name\x03\0\x02\x01s\x04\0\x0bdocument-id\x03\0\x04\
@@ -53,9 +53,10 @@ elete-many\x01\"\x01k\x05\x01j\x01#\x01\x0f\x01@\x02\x05index\x01\x02id\x03\0$\x
 search\x01'\x01i\x10\x01j\x01(\x01\x0f\x01@\x02\x05index\x01\x05query\x07\0)\x04\
 \0\x0dstream-search\x01*\x01j\x01\x0d\x01\x0f\x01@\x01\x05index\x01\0+\x04\0\x0a\
 get-schema\x01,\x01@\x02\x05index\x01\x06schema\x0d\0\x17\x04\0\x0dupdate-schema\
-\x01-\x04\0\x17golem:search/core@1.0.0\x05\x09\x04\0)golem:search-algolia/search\
--library@1.0.0\x04\0\x0b\x14\x01\0\x0esearch-library\x03\0\0\0G\x09producers\x01\
-\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+\x01-\x04\0\x17golem:search/core@1.0.0\x05\x09\x04\0-golem:search-meilisearch/se\
+arch-library@1.0.0\x04\0\x0b\x14\x01\0\x0esearch-library\x03\0\0\0G\x09producers\
+\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41\
+.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
