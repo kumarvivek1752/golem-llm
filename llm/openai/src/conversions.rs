@@ -43,12 +43,7 @@ pub fn create_request(
 pub fn messages_to_input_items(messages: Vec<Message>) -> Vec<InputItem> {
     let mut items = Vec::new();
     for message in messages {
-        let item = match message.role {
-            Role::Assistant => llm_message_to_assistant_message(message),
-            _ => llm_message_to_other_message(message),
-        };
-
-        items.push(item);
+        items.push(llm_message_to_openai_message(message));
     }
     items
 }
@@ -118,11 +113,15 @@ pub fn to_openai_role_name(role: Role) -> &'static str {
     }
 }
 
-pub fn llm_message_to_other_message(message: Message) -> InputItem {
+pub fn llm_message_to_openai_message(message: Message) -> InputItem {
     let mut items = Vec::new();
+
     for content_part in message.content {
         let item = match content_part {
-            ContentPart::Text(msg) => InnerInputItem::TextInput { text: msg },
+            ContentPart::Text(msg) => match message.role {
+                Role::Assistant => InnerInputItem::TextOutput { text: msg },
+                _ => InnerInputItem::TextInput { text: msg },
+            },
             ContentPart::Image(image_reference) => match image_reference {
                 ImageReference::Url(image_url) => InnerInputItem::ImageInput {
                     image_url: image_url.url,
@@ -156,21 +155,6 @@ pub fn llm_message_to_other_message(message: Message) -> InputItem {
     InputItem::InputMessage {
         role: to_openai_role_name(message.role).to_string(),
         content: InnerInput::List(items),
-    }
-}
-
-pub fn llm_message_to_assistant_message(message: Message) -> InputItem {
-    let mut items = Vec::new();
-
-    for content_part in message.content {
-        if let ContentPart::Text(msg) = content_part {
-            items.push(OutputMessageContent::Text { text: msg });
-        }
-    }
-
-    InputItem::InputMessage {
-        role: to_openai_role_name(message.role).to_string(),
-        content: InnerInput::OutputList(items),
     }
 }
 

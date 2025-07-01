@@ -621,8 +621,6 @@ impl Guest for Component {
 
         let mut result = String::new();
 
-        let name = std::env::var("GOLEM_WORKER_NAME").unwrap();
-
         loop {
             match utils::consume_next_event(&stream) {
                 Some(delta) => {
