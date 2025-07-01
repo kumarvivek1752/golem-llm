@@ -21,7 +21,7 @@ components:
               - wit-generated
               - ../../common-rust
             targets:
-              - ../../target/wasm32-wasip1/debug/test_llm.wasm
+              - ../../target/wasm32-wasip1/debug/test_search.wasm
           - command: wac plug --plug ../../../target/wasm32-wasip1/debug/golem_search_algolia.wasm ../../target/wasm32-wasip1/debug/test_search.wasm -o ../../target/wasm32-wasip1/debug/test_search_plugged.wasm
             sources:
               - ../../target/wasm32-wasip1/debug/test_search.wasm
@@ -74,10 +74,10 @@ components:
               - ../../common-rust
             targets:
               - ../../target/wasm32-wasip1/debug/test_search.wasm
-          - command: wac plug --plug ../../../target/wasm32-wasip1/debug/golem_llm_meilisearch.wasm ../../target/wasm32-wasip1/debug/test_search.wasm -o ../../target/wasm32-wasip1/debug/test_meilisearch_plugged.wasm
+          - command: wac plug --plug ../../../target/wasm32-wasip1/debug/golem_search_meilisearch.wasm ../../target/wasm32-wasip1/debug/test_search.wasm -o ../../target/wasm32-wasip1/debug/test_meilisearch_plugged.wasm
             sources:
               - ../../target/wasm32-wasip1/debug/test_search.wasm
-              - ../../../target/wasm32-wasip1/debug/golem_llm_meilisearch.wasm
+              - ../../../target/wasm32-wasip1/debug/golem_search_meilisearch.wasm
             targets:
               - ../../target/wasm32-wasip1/debug/test_meilisearch_plugged.wasm
         sourceWit: wit
@@ -100,7 +100,7 @@ components:
               - ../../common-rust
             targets:
               - ../../target/wasm32-wasip1/debug/test_search.wasm
-          - command: wac plug --plug ../../../target/wasm32-wasip1/debug/golem_llm_opensearch.wasm ../../target/wasm32-wasip1/debug/test_search.wasm -o ../../target/wasm32-wasip1/debug/test_opensearch_plugged.wasm
+          - command: wac plug --plug ../../../target/wasm32-wasip1/debug/golem_search_opensearch.wasm ../../target/wasm32-wasip1/debug/test_search.wasm -o ../../target/wasm32-wasip1/debug/test_opensearch_plugged.wasm
             sources:
               - ../../target/wasm32-wasip1/debug/test_search.wasm
               - ../../../target/wasm32-wasip1/debug/golem_search_opensearch.wasm
@@ -126,7 +126,7 @@ components:
               - ../../common-rust
             targets:
               - ../../target/wasm32-wasip1/debug/test_search.wasm
-          - command: wac plug --plug ../../../target/wasm32-wasip1/debug/golem_llm_typesense.wasm ../../target/wasm32-wasip1/debug/test_search.wasm -o ../../target/wasm32-wasip1/debug/test_typesense_plugged.wasm
+          - command: wac plug --plug ../../../target/wasm32-wasip1/debug/golem_search_typesense.wasm ../../target/wasm32-wasip1/debug/test_search.wasm -o ../../target/wasm32-wasip1/debug/test_typesense_plugged.wasm
             sources:
               - ../../target/wasm32-wasip1/debug/test_search.wasm
               - ../../../target/wasm32-wasip1/debug/golem_search_typesense.wasm
@@ -273,6 +273,6 @@ components:
     defaultProfile: algolia-debug
 
 dependencies:
-  test:llm:
+  test:search:
     - target: test:helper
       type: wasm-rpc
