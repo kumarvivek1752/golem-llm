@@ -43,16 +43,12 @@ pub fn create_request(
 pub fn messages_to_input_items(messages: Vec<Message>) -> Vec<InputItem> {
     let mut items = Vec::new();
     for message in messages {
-        let role = to_openai_role_name(message.role).to_string();
-        let mut input_items = Vec::new();
-        for content_part in message.content {
-            input_items.push(content_part_to_inner_input_item(content_part));
-        }
+        let item = match message.role {
+            Role::Assistant => llm_message_to_assistant_message(message),
+            _ => llm_message_to_other_message(message),
+        };
 
-        items.push(InputItem::InputMessage {
-            role,
-            content: InnerInput::List(input_items),
-        });
+        items.push(item);
     }
     items
 }
@@ -122,35 +118,59 @@ pub fn to_openai_role_name(role: Role) -> &'static str {
     }
 }
 
-pub fn content_part_to_inner_input_item(content_part: ContentPart) -> InnerInputItem {
-    match content_part {
-        ContentPart::Text(msg) => InnerInputItem::TextInput { text: msg },
-        ContentPart::Image(image_reference) => match image_reference {
-            ImageReference::Url(image_url) => InnerInputItem::ImageInput {
-                image_url: image_url.url,
-                detail: match image_url.detail {
-                    Some(ImageDetail::Auto) => Detail::Auto,
-                    Some(ImageDetail::Low) => Detail::Low,
-                    Some(ImageDetail::High) => Detail::High,
-                    None => Detail::default(),
-                },
-            },
-            ImageReference::Inline(image_source) => {
-                let base64_data = general_purpose::STANDARD.encode(&image_source.data);
-                let mime_type = &image_source.mime_type; // This is already a string
-                let data_url = format!("data:{};base64,{}", mime_type, base64_data);
-
-                InnerInputItem::ImageInput {
-                    image_url: data_url,
-                    detail: match image_source.detail {
+pub fn llm_message_to_other_message(message: Message) -> InputItem {
+    let mut items = Vec::new();
+    for content_part in message.content {
+        let item = match content_part {
+            ContentPart::Text(msg) => InnerInputItem::TextInput { text: msg },
+            ContentPart::Image(image_reference) => match image_reference {
+                ImageReference::Url(image_url) => InnerInputItem::ImageInput {
+                    image_url: image_url.url,
+                    detail: match image_url.detail {
                         Some(ImageDetail::Auto) => Detail::Auto,
                         Some(ImageDetail::Low) => Detail::Low,
                         Some(ImageDetail::High) => Detail::High,
                         None => Detail::default(),
                     },
+                },
+                ImageReference::Inline(image_source) => {
+                    let base64_data = general_purpose::STANDARD.encode(&image_source.data);
+                    let mime_type = &image_source.mime_type; // This is already a string
+                    let data_url = format!("data:{};base64,{}", mime_type, base64_data);
+
+                    InnerInputItem::ImageInput {
+                        image_url: data_url,
+                        detail: match image_source.detail {
+                            Some(ImageDetail::Auto) => Detail::Auto,
+                            Some(ImageDetail::Low) => Detail::Low,
+                            Some(ImageDetail::High) => Detail::High,
+                            None => Detail::default(),
+                        },
+                    }
                 }
-            }
-        },
+            },
+        };
+        items.push(item);
+    }
+
+    InputItem::InputMessage {
+        role: to_openai_role_name(message.role).to_string(),
+        content: InnerInput::List(items),
+    }
+}
+
+pub fn llm_message_to_assistant_message(message: Message) -> InputItem {
+    let mut items = Vec::new();
+
+    for content_part in message.content {
+        if let ContentPart::Text(msg) = content_part {
+            items.push(OutputMessageContent::Text { text: msg });
+        }
+    }
+
+    InputItem::InputMessage {
+        role: to_openai_role_name(message.role).to_string(),
+        content: InnerInput::OutputList(items),
     }
 }
 
