@@ -38,7 +38,7 @@ pub fn consume_next_event(stream: &llm::ChatStream) -> Option<String> {
                     }
                 }
             }
-            llm::StreamEvent::Finish(finish) => {}
+            llm::StreamEvent::Finish(..) => {}
             llm::StreamEvent::Error(error) => {
                 result.push_str(&format!(
                     "\nERROR: {:?} {} ({})\n",
