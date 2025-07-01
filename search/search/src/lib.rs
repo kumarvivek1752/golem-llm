@@ -1,7 +1,6 @@
-// pub mod config;
-//pub mod durability;
-// pub mod error;
-// pub mod query_utils;
+pub mod config;
+pub mod durability;
+pub mod error;
 
 wit_bindgen::generate!({
     path: "../wit",
