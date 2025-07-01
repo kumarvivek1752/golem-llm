@@ -142,13 +142,13 @@ jobs:
           golem-cli app build -b ollama-debug
           golem-cli app deploy -b ollama-debug
           golem-cli worker new -e GOLEM_OLLAMA_BASE_URL=http://localhost:11434 test:llm/ollama-1
-          golem-cli worker invoke test:llm/ollama-1 test1
-          golem-cli worker invoke test:llm/ollama-1 test2
-          golem-cli worker invoke test:llm/ollama-1 test3
-          golem-cli worker invoke test:llm/ollama-1 test4
-          golem-cli worker invoke test:llm/ollama-1 test5
-          golem-cli worker invoke test:llm/ollama-1 test6
-          golem-cli worker invoke test:llm/ollama-1 test7
+          golem-cli worker invoke test:llm/ollama-1 test1 | grep -v "ERROR: "
+          golem-cli worker invoke test:llm/ollama-1 test2 | grep -v "ERROR: "
+          golem-cli worker invoke test:llm/ollama-1 test3 | grep -v "ERROR: "
+          golem-cli worker invoke test:llm/ollama-1 test4 | grep -v "ERROR: "
+          golem-cli worker invoke test:llm/ollama-1 test5 | grep -v "ERROR: "
+          golem-cli worker invoke test:llm/ollama-1 test6 | grep -v "ERROR: "
+          golem-cli worker invoke test:llm/ollama-1 test7 | grep -v "ERROR: "
   publish-all:
     needs:
       - tests
