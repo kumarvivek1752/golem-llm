@@ -195,7 +195,7 @@ pub enum InputItem {
 pub enum InnerInput {
     TextInput(String),
     List(Vec<InnerInputItem>),
-    OutputList(Vec<OutputMessageContent>)
+    OutputList(Vec<OutputMessageContent>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
