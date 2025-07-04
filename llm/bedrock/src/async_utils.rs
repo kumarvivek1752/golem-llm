@@ -11,6 +11,6 @@ impl AsyncRuntime {
     where
         F: Future,
     {
-        wasi_async_runtime::block_on(|_| async { f.await })
+        wasi_async_runtime::block_on(|_| f)
     }
 }

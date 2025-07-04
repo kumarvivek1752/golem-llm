@@ -210,10 +210,7 @@ fn get_image_content_block_from_url(url: &str) -> Result<bedrock::types::Content
         None => {
             return Err(custom_error(
                 llm::ErrorCode::InvalidRequest,
-                format!(
-                    "Could not infer the mime type of the image downloaded from url: {}",
-                    url
-                ),
+                format!("Could not infer the mime type of the image downloaded from url: {url}"),
             ));
         }
     };
@@ -266,7 +263,7 @@ fn str_to_bedrock_mime_type(mime_type: &str) -> Result<ImageFormat, llm::Error> 
         "image/gif" => Ok(ImageFormat::Gif),
         other => Err(llm::Error {
             code: llm::ErrorCode::Unsupported,
-            message: format!("Unsupported image type: {}", other),
+            message: format!("Unsupported image type: {other}"),
             provider_error_json: None,
         }),
     }
@@ -503,7 +500,7 @@ fn process_message_stop_event(event: MessageStopEvent) -> Option<llm::StreamEven
 fn json_str_to_smithy_document(value: &str) -> Result<Document, llm::Error> {
     let json_value: serde_json::Value = serde_json::from_str(value).map_err(|err| llm::Error {
         code: llm::ErrorCode::InvalidRequest,
-        message: format!("Invalid tool schema: {}", err),
+        message: format!("Invalid tool schema: {err}"),
         provider_error_json: None,
     })?;
     Ok(serde_json_to_smithy_document(json_value))
