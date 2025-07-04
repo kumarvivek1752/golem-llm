@@ -6,8 +6,10 @@ use golem_llm::{
     golem::llm::llm::{self, ChatEvent, ChatStream, Config, Guest, Message, ToolCall, ToolResult},
     LOGGING_STATE,
 };
+use golem_rust::bindings::wasi::clocks::monotonic_clock;
 use stream::BedrockChatStream;
 
+mod async_utils;
 mod client;
 mod conversions;
 mod stream;
@@ -116,7 +118,8 @@ impl ExtendedGuest for BedrockComponent {
     }
 
     fn subscribe(_stream: &Self::ChatStream) -> golem_rust::wasm_rpc::Pollable {
-        unimplemented!()
+        // this function will never get called in bedrock implementation because of `golem-llm/nopoll` feature flag
+        monotonic_clock::subscribe_duration(0)
     }
 }
 

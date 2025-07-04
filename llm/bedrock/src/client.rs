@@ -1,4 +1,5 @@
 use crate::{
+    async_utils,
     conversions::{self, from_converse_sdk_error, from_converse_stream_sdk_error, BedrockInput},
     stream::BedrockChatStream,
 };
@@ -17,6 +18,7 @@ use golem_llm::{
     config::{get_config_key, get_config_key_or_none},
     golem::llm::llm,
 };
+use golem_rust::bindings::wasi::clocks::monotonic_clock;
 use log::trace;
 
 #[derive(Debug)]
@@ -30,14 +32,14 @@ impl Bedrock {
 
         let wasi_http = WasiHttpClientBuilder::new().build();
 
-        let runtime = get_async_runtime();
+        let runtime = async_utils::get_async_runtime();
 
         runtime.block_on(async {
             let sdk_config = aws_config::defaults(BehaviorVersion::latest())
                 .region(environment.aws_region())
                 .http_client(wasi_http)
                 .credentials_provider(environment.aws_credentials())
-                .sleep_impl(TokioSleep)
+                .sleep_impl(WasiSleep)
                 .load()
                 .await;
             let client = bedrock::Client::new(&sdk_config);
@@ -53,7 +55,7 @@ impl Bedrock {
     ) -> llm::ChatEvent {
         let bedrock_input = BedrockInput::from(messages, config, tool_results);
 
-        let runtime = get_async_runtime();
+        let runtime = async_utils::get_async_runtime();
 
         match bedrock_input {
             Err(err) => llm::ChatEvent::Error(err),
@@ -97,7 +99,7 @@ impl Bedrock {
         match bedrock_input {
             Err(err) => BedrockChatStream::failed(err),
             Ok(input) => {
-                let runtime = get_async_runtime();
+                let runtime = async_utils::get_async_runtime();
                 trace!("Sending request to AWS Bedrock: {input:?}");
                 runtime.block_on(async {
                     let model_id = input.model_id.clone();
@@ -176,19 +178,13 @@ impl BedrockEnvironment {
     }
 }
 
-pub fn get_async_runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .build()
-        .unwrap()
-}
-
 #[derive(Debug, Clone)]
-struct TokioSleep;
-impl AsyncSleep for TokioSleep {
+struct WasiSleep;
+impl AsyncSleep for WasiSleep {
     fn sleep(&self, duration: std::time::Duration) -> Sleep {
         Sleep::new(Box::pin(async move {
-            tokio::time::sleep(duration).await;
+            let nanos = duration.as_nanos() as u64;
+            monotonic_clock::subscribe_duration(nanos).block();
         }))
     }
 }

@@ -6,7 +6,7 @@ use golem_llm::golem::llm::llm;
 use std::cell::{RefCell, RefMut};
 
 use crate::{
-    client::get_async_runtime,
+    async_utils,
     conversions::{converse_stream_output_to_stream_event, custom_error, merge_metadata},
 };
 
@@ -53,7 +53,7 @@ impl BedrockChatStream {
     }
     fn get_single_event(&self) -> Option<llm::StreamEvent> {
         if let Some(stream) = self.stream_mut().as_mut() {
-            let runtime = get_async_runtime();
+            let runtime = async_utils::get_async_runtime();
 
             runtime.block_on(async move {
                 let token = stream.recv().await;
