@@ -10,6 +10,9 @@ components:
     profiles:
       # DEBUG PROFILES
       algolia-debug:
+        env:
+          ALGOLIA_APPLICATION_ID: SLPKFQ34PO
+          ALGOLIA_API_KEY: 76b6638c2c0754b20b008c55dc2356bb
         files:
           - sourcePath: ../../data/cat.png
             targetPath: /data/cat.png
@@ -22,7 +25,7 @@ components:
               - ../../common-rust
             targets:
               - ../../target/wasm32-wasip1/debug/test_search.wasm
-          - command: wac plug --plug ../../../target/wasm32-wasip1/debug/golem_search_algolia.wasm ../../target/wasm32-wasip1/debug/test_search.wasm -o ../../target/wasm32-wasip1/debug/test_search_plugged.wasm
+          - command: wac plug --plug ../../../target/wasm32-wasip1/debug/golem_search_algolia.wasm ../../target/wasm32-wasip1/debug/test_search.wasm -o ../../target/wasm32-wasip1/debug/test_algolia_plugged.wasm
             sources:
               - ../../target/wasm32-wasip1/debug/test_search.wasm
               - ../../../target/wasm32-wasip1/debug/golem_search_algolia.wasm

@@ -1,8 +1,10 @@
-use golem_search::error::{internal_error, search_error_from_status, from_reqwest_error};
+
+
+use golem_search::error::{internal_error, search_error_from_status};
 use golem_search::golem::search::types::SearchError;
 use log::error;
 use log::trace;
-use reqwest::{Client, RequestBuilder, Method, Response};
+use ureq::{Agent, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -38,18 +40,16 @@ pub struct IndexSettings {
 /// Based on https://www.algolia.com/doc/api-reference/search-api/
 #[derive(Clone)]
 pub struct AlgoliaSearchApi {
-    client: Client,
     application_id: String,
     api_key: String,
+    agent: Agent,
     search_url: String,
     write_url: String,
 }
 
 impl AlgoliaSearchApi {
     pub fn new(application_id: String, api_key: String) -> Self {
-        let client = Client::builder()
-            .build()
-            .expect("Failed to initialize HTTP client");
+        let agent = Agent::new();
 
         // Algolia URLs require lowercase application IDs
         let search_url = format!(
@@ -61,13 +61,13 @@ impl AlgoliaSearchApi {
         Self {
             application_id,
             api_key,
-            client,
+            agent,
             search_url,
             write_url,
         }
     }
 
-    fn create_request(&self, method: Method, url: &str) -> RequestBuilder  {
+    fn create_request(&self, method: &str, url: &str) -> ureq::Request  {
         println!("[Algolia] HTTP {} {}", method, url);
         println!(
             "[Algolia] Headers: X-Algolia-Application-Id={}, X-Algolia-API-Key={}...",
@@ -75,11 +75,19 @@ impl AlgoliaSearchApi {
             &self.api_key[..4]
         );
 
-        self.client
+        let http_method = match method {
+            "GET" => reqwest::Method::GET,
+            "POST" => reqwest::Method::POST,
+            "PUT" => reqwest::Method::PUT,
+            "DELETE" => reqwest::Method::DELETE,
+            _ => panic!("Unsupported HTTP method"),
+        };
+
+         self.agent
             .request(method, url)
-            .header("X-Algolia-Application-Id", &self.application_id)
-            .header("X-Algolia-API-Key", &self.api_key)
-            .header("Content-Type", "application/json")
+            .set("X-Algolia-Application-Id", &self.application_id)
+            .set("X-Algolia-API-Key", &self.api_key)
+            .set("Content-Type", "application/json")
     }
 
     // pub fn update_index_settings(
@@ -107,8 +115,8 @@ impl AlgoliaSearchApi {
         let url = format!("{}/1/indexes/{}", self.write_url, index_name);
 
         let response = self
-            .create_request(Method::DELETE, &url)
-            .send()
+            .create_request("DELETE", &url)
+            .call()
             .map_err(|e| internal_error(format!("Failed to delete index: {}", e)))?;
 
         parse_response(response)
@@ -121,8 +129,8 @@ impl AlgoliaSearchApi {
         println!("[Algolia] list_indexes URL: {}", url);
 
         let response = self
-            .create_request(Method::GET, &url)
-            .send()
+            .create_request("GET", &url)
+            .call()
             .map_err(|e| internal_error(format!("Failed to list indexes: {}", e)))?;
 
         parse_response(response)
@@ -135,11 +143,17 @@ impl AlgoliaSearchApi {
     ) -> Result<SaveObjectResponse, SearchError> {
         trace!("Saving object to index: {index_name}");
 
-        let url = format!("{}/1/indexes/{}", self.write_url, index_name);
+        let (method, url) =  {
+            (
+                "POST",
+                format!("{}/1/indexes/{}", self.write_url, index_name),
+            )
+        };
 
-        let response = self.create_request(Method::POST, &url)
-            .json(object)
-            .send()
+        let json = serde_json::to_string(object)
+            .map_err(|e| internal_error(format!("Failed to serialize object: {}", e)))?;
+        let response = self.create_request(method, &url)
+            .send_string(&json)
             .map_err(|e| internal_error(format!("Failed to save object: {}", e)))?;
 
         parse_response(response)
@@ -163,9 +177,10 @@ impl AlgoliaSearchApi {
                 .collect(),
         };
 
-        let response = self.create_request(Method::POST, &url)
-            .json(&batch_request)
-            .send()
+         let json = serde_json::to_string(&batch_request)
+            .map_err(|e| internal_error(format!("Failed to serialize batch request: {}", e)))?;
+        let response = self.create_request("POST", &url)
+            .send_string(&json)
             .map_err(|e| internal_error(format!("Failed to save objects: {}", e)))?;
 
         parse_response(response)
@@ -181,8 +196,8 @@ impl AlgoliaSearchApi {
         let url = format!("{}/1/indexes/{}/{}", self.write_url, index_name, object_id);
 
         let response = self
-            .create_request(Method::DELETE, &url)
-            .send()
+            .create_request("DELETE", &url)
+            .call()
             .map_err(|e| internal_error(format!("Failed to delete object: {}", e)))?;
 
         parse_response(response)
@@ -212,9 +227,10 @@ impl AlgoliaSearchApi {
                 .collect(),
         };
 
-        let response = self.create_request(Method::POST, &url)
-            .json(&batch_request)
-            .send()
+       let json = serde_json::to_string(&batch_request)
+            .map_err(|e| internal_error(format!("Failed to serialize batch request: {}", e)))?;
+        let response = self.create_request("POST", &url)
+            .send_string(&json)
             .map_err(|e| internal_error(format!("Failed to delete objects: {}", e)))?;
 
         parse_response(response)
@@ -229,7 +245,7 @@ impl AlgoliaSearchApi {
 
         let url = format!("{}/1/indexes/{}/{}", self.search_url, index_name, object_id);
 
-        let response = self.create_request(Method::GET, &url).send();
+        let response = self.create_request("GET", &url).call();
 
         match response {
             Ok(resp) => {
@@ -253,17 +269,20 @@ impl AlgoliaSearchApi {
 
         let url = format!("{}/1/indexes/{}/query", self.search_url, index_name);
 
-        let response = self.create_request(Method::POST, &url)
-            .json(query)
-            .send();
+        let json = serde_json::to_string(query)
+            .map_err(|e| internal_error(format!("Failed to serialize search query: {}", e)))?;
+        println!("[Algolia] search query body: {}", json);
+        let response = self.create_request("POST", &url)
+            .send_string(&json);
 
-        match response {
+         match response {
             Ok(resp) => parse_response(resp),
-            Err(e) => {
-                let error_msg = format!("Failed to search: {}: {}", url, e);
-                println!("[Algolia] search error: {}", error_msg);
-                Err(internal_error(error_msg))
+            Err(ureq::Error::Status(code, resp)) => {
+                let body = resp.into_string().unwrap_or_else(|_| "Failed to read error body".to_string());
+                println!("[Algolia] search error body: {}", body);
+                Err(internal_error(format!("Failed to search: {}: status code {}", url, code)))
             }
+            Err(e) => Err(internal_error(format!("Failed to search: {}", e))),
         }
     }
 
@@ -273,8 +292,8 @@ impl AlgoliaSearchApi {
         let url = format!("{}/1/indexes/{}/settings", self.write_url, index_name);
 
         let response = self
-            .create_request(Method::GET, &url)
-            .send()
+            .create_request("GET", &url)
+            .call()
             .map_err(|e| internal_error(format!("Failed to get settings: {}", e)))?;
 
         parse_response(response)
@@ -284,21 +303,19 @@ impl AlgoliaSearchApi {
         &self,
         index_name: &str,
         settings: &IndexSettings,
-    ) -> Result<(), SearchError> {
+    ) -> Result<SetSettingsResponse, SearchError> {
         trace!("Setting settings for index: {index_name}");
 
         let url = format!("{}/1/indexes/{}/settings", self.write_url, index_name);
 
+        let json = serde_json::to_string(settings)
+            .map_err(|e| internal_error(format!("Failed to serialize settings: {}", e)))?;
         let response = self
-            .create_request(Method::PUT, &url)
-            .json(settings)
-            .send()
+            .create_request("PUT", &url)
+            .send_string(&json)
             .map_err(|e| internal_error(format!("Failed to set settings: {}", e)))?;
 
-        let parsed_response: SetSettingsResponse = parse_response(response)?;
-        
-        let _ = parsed_response;
-        Ok(())
+        parse_response(response)
     }
 
     pub fn wait_for_task(&self, index_name: &str, task_id: u64) -> Result<(), SearchError> {
@@ -310,10 +327,10 @@ impl AlgoliaSearchApi {
 
         for _ in 0..20 {
             // Poll for up to 10 seconds
-            let response = self.create_request(Method::GET, &url).send();
+            let response = self.create_request("GET", &url).call();
             match response {
                 Ok(resp) => {
-                    let body_str = match resp.text() {
+                    let body_str = match resp.into_string() {
                         Ok(s) => s,
                         Err(e) => {
                             println!("[Algolia] Failed to read task status response body: {}", e);
@@ -522,12 +539,11 @@ pub struct DeleteObjectsResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetSettingsResponse {
-    #[serde(rename = "updatedAt")]
-    pub updated_at: String,
     #[serde(rename = "taskID")]
     pub task_id: u64,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchRequest {
@@ -541,43 +557,178 @@ pub struct BatchOperation {
 }
 
 fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, SearchError> {
-    let status_code = response.status().as_u16();
-    let status = response.status();
+    let status_code = response.status();
     println!("[Algolia] Response status: {}", status_code);
     
-    if status.is_success() {
-        let response_body = response
-            .text()
-            .map_err(|e| internal_error(format!("Failed to read response body as text: {}", e)))?;
-        
-        
-        let body = serde_json::from_str::<T>(&response_body)
-            .map_err(|e| internal_error(format!(
-                "Failed to decode response body as {}: {}. Raw response body: {}", 
-                std::any::type_name::<T>(), 
-                e, 
-                response_body
-            )))?;
-
-        trace!("Received response from Algolia API: {body:?}");
-        
+    if status_code >= 200 && status_code < 300 {
+        let body_str = response
+            .into_string()
+            .map_err(|e| internal_error(format!("Failed to read response: {}", e)))?;
+        println!("[Algolia] Success response body: {}", body_str);
+        let body: T = serde_json::from_str(&body_str)
+            .map_err(|e| internal_error(format!("Failed to parse response: {} | body: {}", e, body_str)))?;
+        println!("[Algolia] Parsed response: {body:?}");
         Ok(body)
     } else {
         let body = response
-            .text()
+            .into_string()
             .map_err(|e| internal_error(format!("Failed to read error response: {}", e)))?;
         println!("[Algolia] Error response body: {}", body);
         error!("[Algolia] parse_response error status {}: {}", status_code, body);
+        // Convert status code to reqwest::StatusCode for compatibility with existing error handling
+        let status = reqwest::StatusCode::from_u16(status_code)
+            .unwrap_or(reqwest::StatusCode::INTERNAL_SERVER_ERROR);
         Err(search_error_from_status(status))
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::env;
     use std::time::Duration;
+
+    // ===== SERIALIZATION/DESERIALIZATION TESTS =====
+
+    #[test]
+    fn test_index_settings_serialization() {
+        println!("[TEST] test_index_settings_serialization - testing IndexSettings serde");
+        
+        // Test default/empty settings
+        let empty_settings = IndexSettings::default();
+        let json = serde_json::to_string(&empty_settings).unwrap();
+        println!("[TEST] Empty settings JSON: {}", json);
+        let deserialized: IndexSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(empty_settings.searchable_attributes, deserialized.searchable_attributes);
+        
+        // Test populated settings
+        let settings = IndexSettings {
+            searchable_attributes: vec!["title".to_string(), "content".to_string()],
+            attributes_for_faceting: vec!["category".to_string(), "filterOnly(brand)".to_string()],
+            unretrievable_attributes: vec!["internal_id".to_string()],
+            attributes_to_retrieve: vec!["title".to_string(), "description".to_string()],
+            ranking: vec!["typo".to_string(), "geo".to_string()],
+            custom_ranking: vec!["desc(popularity)".to_string(), "asc(price)".to_string()],
+            replicas: vec!["index_replica1".to_string()],
+        };
+        
+        let json = serde_json::to_string(&settings).unwrap();
+        println!("[TEST] Populated settings JSON: {}", json);
+        let deserialized: IndexSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(settings.searchable_attributes, deserialized.searchable_attributes);
+        assert_eq!(settings.attributes_for_faceting, deserialized.attributes_for_faceting);
+        assert_eq!(settings.custom_ranking, deserialized.custom_ranking);
+        
+        // Test parsing real Algolia API response with null values
+        let algolia_response = r#"{
+            "searchableAttributes": ["title", "description"],
+            "attributesForFaceting": null,
+            "customRanking": ["desc(popularity)"],
+            "replicas": null
+        }"#;
+        
+        let parsed: IndexSettings = serde_json::from_str(algolia_response).unwrap();
+        assert_eq!(parsed.searchable_attributes, vec!["title", "description"]);
+        assert_eq!(parsed.attributes_for_faceting, Vec::<String>::new()); // null should become empty vec
+        assert_eq!(parsed.custom_ranking, vec!["desc(popularity)"]);
+        assert_eq!(parsed.replicas, Vec::<String>::new()); // null should become empty vec
+        
+        println!("[TEST] ✓ IndexSettings serialization/deserialization works correctly");
+    }
+
+    #[test]
+    fn test_algolia_object_serialization() {
+        println!("[TEST] test_algolia_object_serialization - testing AlgoliaObject serde");
+        
+        // Test with objectID
+        let obj_with_id = AlgoliaObject {
+            object_id: Some("test123".to_string()),
+            content: serde_json::json!({
+                "title": "Test Document",
+                "category": "books",
+                "price": 29.99,
+                "in_stock": true
+            }),
+        };
+        
+        let json = serde_json::to_string(&obj_with_id).unwrap();
+        println!("[TEST] Object with ID JSON: {}", json);
+        let deserialized: AlgoliaObject = serde_json::from_str(&json).unwrap();
+        assert_eq!(obj_with_id.object_id, deserialized.object_id);
+        assert_eq!(obj_with_id.content["title"], deserialized.content["title"]);
+        
+        // Test without objectID
+        let obj_without_id = AlgoliaObject {
+            object_id: None,
+            content: serde_json::json!({
+                "title": "Another Document",
+                "category": "electronics"
+            }),
+        };
+        
+        let json = serde_json::to_string(&obj_without_id).unwrap();
+        println!("[TEST] Object without ID JSON: {}", json);
+        // Should not include objectID field when None
+        assert!(!json.contains("objectID"));
+        
+        let deserialized: AlgoliaObject = serde_json::from_str(&json).unwrap();
+        assert_eq!(obj_without_id.object_id, deserialized.object_id);
+        assert_eq!(obj_without_id.content["title"], deserialized.content["title"]);
+        
+        println!("[TEST] ✓ AlgoliaObject serialization/deserialization works correctly");
+    }
+
+    #[test]
+    fn test_search_query_serialization() {
+        println!("[TEST] test_search_query_serialization - testing SearchQuery serde");
+        
+        // Test full query
+        let query = SearchQuery {
+            query: Some("search term".to_string()),
+            filters: Some("category:books AND price > 10".to_string()),
+            numeric_filters: Some(serde_json::json!(["price > 10", "rating >= 4"])),
+            page: Some(1),
+            hits_per_page: Some(20),
+            offset: Some(0),
+            length: Some(100),
+            facets: vec!["category".to_string(), "brand".to_string()],
+            attributes_to_retrieve: vec!["title".to_string(), "price".to_string()],
+            typo_tolerance: Some(true),
+            analytics: Some(false),
+        };
+        
+        let json = serde_json::to_string(&query).unwrap();
+        println!("[TEST] Full query JSON: {}", json);
+        let deserialized: SearchQuery = serde_json::from_str(&json).unwrap();
+        assert_eq!(query.query, deserialized.query);
+        assert_eq!(query.filters, deserialized.filters);
+        assert_eq!(query.hits_per_page, deserialized.hits_per_page);
+        assert_eq!(query.facets, deserialized.facets);
+        
+        // Test minimal query
+        let minimal_query = SearchQuery {
+            query: Some("minimal".to_string()),
+            filters: None,
+            numeric_filters: None,
+            page: None,
+            hits_per_page: None,
+            offset: None,
+            length: None,
+            facets: vec![],
+            attributes_to_retrieve: vec![],
+            typo_tolerance: None,
+            analytics: None,
+        };
+        
+        let json = serde_json::to_string(&minimal_query).unwrap();
+        println!("[TEST] Minimal query JSON: {}", json);
+        // Should not include None/empty fields
+        assert!(!json.contains("filters"));
+        assert!(!json.contains("page"));
+        assert!(!json.contains("facets"));
+        
+        println!("[TEST] ✓ SearchQuery serialization/deserialization works correctly");
+    }
 
     fn setup_client() -> AlgoliaSearchApi {
         let app_id = "SLPKFQ34PO";
@@ -632,7 +783,7 @@ mod tests {
         let client = setup_client();
         let index = test_index_name("delete_objects");
         
-        // Create index by seIndexSettingstting initial settings (Algolia auto-creates index)
+        // Create index by setting initial settings (Algolia auto-creates index)
         println!("[TEST] Creating test index by setting settings: {}", index);
         let initial_settings = IndexSettings::default();
         let settings_res = client.set_settings(&index, &initial_settings);
@@ -641,7 +792,7 @@ mod tests {
         match settings_res {
             Ok(settings_response) => {
                 println!("[TEST] ✓ Index auto-created via set_settings");
-                //client.wait_for_task(&index, settings_response.task_id).expect("wait_for_task for set_settings failed");
+                client.wait_for_task(&index, settings_response.task_id).expect("wait_for_task for set_settings failed");
                 
                 // Create multiple test objects
                 println!("[TEST] Creating test objects for deletion");
@@ -987,4 +1138,177 @@ mod tests {
         // Cleanup
         client.delete_index(&index).ok();
     }
+
+    #[test]
+    fn test_response_types_serialization() {
+        println!("[TEST] test_response_types_serialization - testing all response types serde");
+        
+        // Test SetSettingsResponse (the one causing issues)
+        let set_settings_response = r#"{
+            "taskID": 44372162001,
+            "updatedAt": "2025-07-04T14:47:12.197Z"
+        }"#;
+        
+        let parsed: SetSettingsResponse = serde_json::from_str(set_settings_response).unwrap();
+        assert_eq!(parsed.task_id, 44372162001);
+        assert_eq!(parsed.updated_at, "2025-07-04T14:47:12.197Z");
+        
+        // Test round-trip
+        let json = serde_json::to_string(&parsed).unwrap();
+        println!("[TEST] SetSettingsResponse round-trip JSON: {}", json);
+        let reparsed: SetSettingsResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.task_id, reparsed.task_id);
+        assert_eq!(parsed.updated_at, reparsed.updated_at);
+        
+        println!("[TEST] ✓ SetSettingsResponse serialization/deserialization works correctly");
+    }
+
+    #[test]
+    fn test_set_settings_integration_roundtrip() {
+        println!("[TEST] test_set_settings_integration_roundtrip - comprehensive set_settings integration test");
+        let client = setup_client();
+        let index = test_index_name("set_settings_integration");
+        
+        // Test 1: Create index and set initial settings
+        println!("[TEST] Phase 1: Testing initial set_settings call");
+        let initial_settings = IndexSettings {
+            searchable_attributes: vec!["title".to_string(), "description".to_string()],
+            attributes_for_faceting: vec!["category".to_string()],
+            unretrievable_attributes: vec![],
+            attributes_to_retrieve: vec!["title".to_string(), "description".to_string(), "category".to_string()],
+            ranking: vec!["typo".to_string(), "geo".to_string(), "words".to_string()],
+            custom_ranking: vec!["desc(popularity)".to_string()],
+            replicas: vec![],
+        };
+        
+        match client.set_settings(&index, &initial_settings) {
+            Ok(set_response) => {
+                println!("[TEST] ✓ set_settings succeeded: {:?}", set_response);
+                
+                // Test SetSettingsResponse structure
+                assert!(set_response.task_id > 0, "task_id should be positive");
+                assert!(!set_response.updated_at.is_empty(), "updated_at should not be empty");
+                assert!(set_response.updated_at.contains("T"), "updated_at should be ISO format");
+                println!("[TEST] ✓ SetSettingsResponse structure is valid");
+                
+                // Test roundtrip serialization of SetSettingsResponse
+                let serialized = serde_json::to_string(&set_response).unwrap();
+                println!("[TEST] SetSettingsResponse serialized: {}", serialized);
+                let deserialized: SetSettingsResponse = serde_json::from_str(&serialized).unwrap();
+                assert_eq!(set_response.task_id, deserialized.task_id);
+                assert_eq!(set_response.updated_at, deserialized.updated_at);
+                println!("[TEST] ✓ SetSettingsResponse roundtrip serialization works");
+                
+                // Wait for task completion
+                match client.wait_for_task(&index, set_response.task_id) {
+                    Ok(()) => {
+                        println!("[TEST] ✓ Initial settings task completed successfully");
+                        
+                        // Test 2: Verify settings were applied by getting them back
+                        println!("[TEST] Phase 2: Verifying settings were applied");
+                        match client.get_settings(&index) {
+                            Ok(retrieved_settings) => {
+                                println!("[TEST] ✓ Retrieved settings: {:?}", retrieved_settings);
+                                assert_eq!(initial_settings.searchable_attributes, retrieved_settings.searchable_attributes);
+                                assert_eq!(initial_settings.attributes_for_faceting, retrieved_settings.attributes_for_faceting);
+                                assert_eq!(initial_settings.custom_ranking, retrieved_settings.custom_ranking);
+                                println!("[TEST] ✓ Settings were applied correctly");
+                            }
+                            Err(e) => {
+                                println!("[TEST] ⚠ Failed to retrieve settings for verification: {:?}", e);
+                            }
+                        }
+                        
+                        // Test 3: Update settings and test another SetSettingsResponse
+                        println!("[TEST] Phase 3: Testing settings update");
+                        let updated_settings = IndexSettings {
+                            searchable_attributes: vec!["title".to_string(), "content".to_string(), "tags".to_string()],
+                            attributes_for_faceting: vec!["category".to_string(), "brand".to_string()],
+                            unretrievable_attributes: vec!["internal_id".to_string()],
+                            attributes_to_retrieve: vec!["title".to_string(), "content".to_string()],
+                            ranking: vec!["typo".to_string(), "geo".to_string(), "words".to_string(), "proximity".to_string()],
+                            custom_ranking: vec!["desc(popularity)".to_string(), "asc(price)".to_string()],
+                            replicas: vec![],
+                        };
+                        
+                        match client.set_settings(&index, &updated_settings) {
+                            Ok(update_response) => {
+                                println!("[TEST] ✓ Settings update succeeded: {:?}", update_response);
+                                
+                                // Test second SetSettingsResponse
+                                assert!(update_response.task_id > 0);
+                                assert!(update_response.task_id != set_response.task_id, "Should have different task IDs");
+                                assert!(!update_response.updated_at.is_empty());
+                                println!("[TEST] ✓ Second SetSettingsResponse structure is valid");
+                                
+                                // Test roundtrip serialization of second response
+                                let serialized2 = serde_json::to_string(&update_response).unwrap();
+                                println!("[TEST] Second SetSettingsResponse serialized: {}", serialized2);
+                                let deserialized2: SetSettingsResponse = serde_json::from_str(&serialized2).unwrap();
+                                assert_eq!(update_response.task_id, deserialized2.task_id);
+                                assert_eq!(update_response.updated_at, deserialized2.updated_at);
+                                println!("[TEST] ✓ Second SetSettingsResponse roundtrip serialization works");
+                                
+                                // Wait for update task completion
+                                match client.wait_for_task(&index, update_response.task_id) {
+                                    Ok(()) => {
+                                        println!("[TEST] ✓ Settings update task completed successfully");
+                                        
+                                        // Test 4: Verify updated settings
+                                        println!("[TEST] Phase 4: Verifying updated settings");
+                                        match client.get_settings(&index) {
+                                            Ok(final_settings) => {
+                                                println!("[TEST] ✓ Retrieved updated settings: {:?}", final_settings);
+                                                assert_eq!(updated_settings.searchable_attributes, final_settings.searchable_attributes);
+                                                assert_eq!(updated_settings.attributes_for_faceting, final_settings.attributes_for_faceting);
+                                                assert_eq!(updated_settings.unretrievable_attributes, final_settings.unretrievable_attributes);
+                                                assert_eq!(updated_settings.custom_ranking, final_settings.custom_ranking);
+                                                println!("[TEST] ✓ Updated settings were applied correctly");
+                                            }
+                                            Err(e) => {
+                                                println!("[TEST] ⚠ Failed to retrieve updated settings: {:?}", e);
+                                            }
+                                        }
+                                        
+                                        println!("[TEST] ✓ All SetSettingsResponse integration tests passed!");
+                                    }
+                                    Err(e) => {
+                                        println!("[TEST] ⚠ Settings update task failed: {:?}", e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                println!("[TEST] ✗ Settings update failed: {:?}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("[TEST] ⚠ Initial settings task failed: {:?}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("[TEST] ✗ Initial set_settings failed: {:?}", e);
+                println!("[TEST] This usually means you're using a Search-Only API key");
+                println!("[TEST] For full testing, please provide an Admin API key via environment variables:");
+                println!("[TEST] export ALGOLIA_APPLICATION_ID=your_app_id");
+                println!("[TEST] export ALGOLIA_API_KEY=your_admin_api_key");
+            }
+        }
+        
+        // Cleanup
+        println!("[TEST] Cleaning up test index");
+        match client.delete_index(&index) {
+            Ok(delete_response) => {
+                client.wait_for_task(&index, delete_response.task_id).ok();
+                println!("[TEST] ✓ Test index cleaned up successfully");
+            }
+            Err(e) => {
+                println!("[TEST] ⚠ Failed to clean up test index: {:?}", e);
+            }
+        }
+    }
+
+    // ===== EXISTING TESTS =====
 }
+

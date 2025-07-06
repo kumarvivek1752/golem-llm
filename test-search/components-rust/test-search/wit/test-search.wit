@@ -13,6 +13,7 @@ interface test-search-api {
 }
 
 world test-search {
-  import golem:search/search@1.0.0;
+  import golem:search/core@1.0.0;
+  import golem:search/types@1.0.0;
   export test-search-api;
 }

@@ -31,15 +31,15 @@ wit-bindgen-rt = { workspace = true }
 path = "wit-generated"
 
 [package.metadata.component.bindings.with]
-"wasi:io/poll@0.2.0" = "golem_rust::wasm_rpc::wasi::io::poll"
-"wasi:clocks/wall-clock@0.2.0" = "golem_rust::wasm_rpc::wasi::clocks::wall_clock"
-"golem:rpc/types@0.2.0" = "golem_rust::wasm_rpc::golem_rpc_0_2_x::types"
+"wasi:io/poll@0.2.3" = "golem_rust::wasm_rpc::wasi::io::poll"
+"wasi:clocks/wall-clock@0.2.3" = "golem_rust::wasm_rpc::wasi::clocks::wall_clock"
+"golem:rpc/types@0.2.1" = "golem_rust::wasm_rpc::golem_rpc_0_2_x::types"
 
 [package.metadata.component.target.dependencies]
-"golem:search" = { path = "wit-generated/deps/golem-search" }
-"wasi:clocks" = { path = "wit-generated/deps/clocks" }
 "wasi:io" = { path = "wit-generated/deps/io" }
+"wasi:clocks" = { path = "wit-generated/deps/clocks" }
 "golem:rpc" = { path = "wit-generated/deps/golem-rpc" }
+"golem:search" = { path = "wit-generated/deps/golem-search" }
 "test:helper-client" = { path = "wit-generated/deps/test_helper-client" }
 "test:search-exports" = { path = "wit-generated/deps/test_search-exports" }
 
