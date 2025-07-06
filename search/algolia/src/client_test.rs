@@ -1,4 +1,4 @@
-
+// this is just for native testing purpose
 
 use golem_search::error::{internal_error, search_error_from_status};
 use golem_search::golem::search::types::SearchError;

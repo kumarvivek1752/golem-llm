@@ -11,14 +11,14 @@ struct Component;
 // Test constants for different providers
 #[cfg(feature = "algolia")]
 const TEST_INDEX: &'static str = "test-algolia-index";
-#[cfg(feature = "elasticsearch")]
-const TEST_INDEX: &'static str = "test-elasticsearch-index";
-#[cfg(feature = "meilisearch")]
-const TEST_INDEX: &'static str = "test-meilisearch-index";
-#[cfg(feature = "opensearch")]
-const TEST_INDEX: &'static str = "test-opensearch-index";
-#[cfg(feature = "typesense")]
-const TEST_INDEX: &'static str = "test-typesense-index";
+// #[cfg(feature = "elasticsearch")]
+// const TEST_INDEX: &'static str = "test-elasticsearch-index";
+// #[cfg(feature = "meilisearch")]
+// const TEST_INDEX: &'static str = "test-meilisearch-index";
+// #[cfg(feature = "opensearch")]
+// const TEST_INDEX: &'static str = "test-opensearch-index";
+// #[cfg(feature = "typesense")]
+// const TEST_INDEX: &'static str = "test-typesense-index";
 
 // Helper function to create test documents
 fn create_test_documents() -> Vec<Doc> {
@@ -597,11 +597,8 @@ impl Guest for Component {
        let schema = test_schema();
 
         // Wrap the call in a catch_unwind to handle panics gracefully
-        let panic_result = std::panic::catch_unwind(|| {
-            core::update_schema(index_name.clone(), &schema.clone())
-        });
+            core::update_schema(&index_name.clone(), &schema.clone());
 
-        match panic_result {
             Ok(schema_result) => {
                 match schema_result {
                     Ok(_) => results.push("✓  schema update succeeded".to_string()),
@@ -628,7 +625,7 @@ impl Guest for Component {
                 results.push("  This is likely a WASM-RPC serialization boundary issue".to_string());
                 results.push("  The Algolia API call succeeded but response serialization failed".to_string());
             }
-        }
+        
 
         results.join("\n")
     }
