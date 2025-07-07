@@ -296,10 +296,8 @@ impl AlgoliaSearchApi {
         .send()
         .map_err(|e| internal_error(format!("Failed to set settings: {}", e)))?;
 
-    // pull out the status (StatusCode is Copy so this doesn't move response)
     let status = response.status();
 
-    // if it failed, consume `response` here by calling `.text()`
     if !status.is_success() {
         let err_body = response
             .text()
@@ -308,7 +306,6 @@ impl AlgoliaSearchApi {
         return Err(search_error_from_status(status));
     }
 
-    // on success, we never call `.text()` or `.json()`—we just return unit
     Ok(())
 }
 
