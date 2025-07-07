@@ -579,7 +579,7 @@ impl Guest for Component {
         let index_name = "test777";
         let schema = test_schema();
 
-        // Test schema update for meilisearch
+
         match core::update_schema(&index_name, &schema) {
             Ok(_) => (()),
             Err(error) => return format!("update failed:  {:?}", error),
