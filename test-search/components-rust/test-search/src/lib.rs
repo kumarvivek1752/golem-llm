@@ -75,7 +75,7 @@ fn create_test_documents() -> Vec<Doc> {
                     index: false,
                 },
             ],
-            primary_key: Some("id".to_string()),
+            primary_key: None,
         }
     }
 
@@ -92,7 +92,7 @@ impl Guest for Component {
             Err(SearchError::Unsupported) => results.push("✓ Schema configuration not required (auto-detected)".to_string()),
             Err(e) => {
                 // If schema setup fails, we'll try to proceed with document insertion anyway
-                results.push(format!("⚠ Schema setup failed, proceeding anyway: {:?}", e));
+                results.push(format!("⚠  setup failed, proceeding anyway: {:?}", e));
             }
         }
 
@@ -581,8 +581,8 @@ impl Guest for Component {
 
 
         match core::update_schema(&index_name, &schema) {
-            Ok(_) => (()),
-            Err(error) => return format!("update failed:  {:?}", error),
+            Ok(()) => (),
+            Err(error) => return format!("update :  {:?}", error),
         };
 
         

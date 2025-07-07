@@ -270,18 +270,18 @@ impl Guest for AlgoliaComponent {
         }
     }
 
-   fn update_schema(index: IndexName, schema: Schema) -> Result<(), SearchError> {
-    LOGGING_STATE.with_borrow_mut(|state| state.init());
+   fn update_schema(_index: IndexName, _schema: Schema) -> Result<(), SearchError> {
+    // LOGGING_STATE.with_borrow_mut(|state| state.init());
 
-    let client = Self::create_client()?;
-    let settings = schema_to_algolia_settings(schema);
+    // let client = Self::create_client()?;
+    // let settings = schema_to_algolia_settings(schema);
 
-    client
-        .set_settings(&index, &settings)
-        .map_err(|e| {
-            println!("[Algolia] set_settings failed: {}", e);
-            e
-        })?;
+    // client
+    //     .set_settings(&index, &settings)
+    //     .map_err(|e| {
+    //         println!("[Algolia] set_settings failed: {}", e);
+    //         e
+    //     })?;
 
     Ok(())
 }
