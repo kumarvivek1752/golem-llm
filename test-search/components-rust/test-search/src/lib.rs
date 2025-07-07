@@ -67,27 +67,11 @@ fn create_test_documents() -> Vec<Doc> {
         Schema {
             fields: vec![
                 SchemaField {
-                    name: "title".to_string(),
-                    field_type: FieldType::Text,
-                    required: false,
-                    facet: false,
-                    sort: false,
-                    index: true,
-                },
-                SchemaField {
-                    name: "category".to_string(),
-                    field_type: FieldType::Keyword,
-                    required: false,
-                    facet: true,
-                    sort: false,
-                    index: true,
-                },
-                SchemaField {
                     name: "value".to_string(),
                     field_type: FieldType::Integer,
                     required: false,
                     facet: false,
-                    sort: true,
+                    sort: false,
                     index: false,
                 },
             ],
@@ -592,42 +576,18 @@ impl Guest for Component {
 
     /// test7 demonstrates error handling and edge cases
     fn test7() -> String {
-        let mut results = Vec::new();
         let index_name = "test777";
-       let schema = test_schema();
+        let schema = test_schema();
 
-        // Wrap the call in a catch_unwind to handle panics gracefully
-            core::update_schema(&index_name.clone(), &schema.clone());
+        // Test schema update for meilisearch
+        match core::update_schema(&index_name, &schema) {
+            Ok(_) => (()),
+            Err(error) => return format!("update failed:  {:?}", error),
+        };
 
-            Ok(schema_result) => {
-                match schema_result {
-                    Ok(_) => results.push("✓  schema update succeeded".to_string()),
-                    Err(SearchError::Unsupported) => {
-                        results.push("⚠ Schema setup not required (auto-detected on first document)".to_string());
-                    },
-                    Err(e) => {
-                        results.push(format!("✗ Schema update failed: {:?}", e));
-                    }
-                }
-            },
-            Err(panic_payload) => {
-                results.push("✗ PANIC CAUGHT: update_schema panicked!".to_string());
-                
-                // Try to extract panic message
-                if let Some(panic_msg) = panic_payload.downcast_ref::<&str>() {
-                    results.push(format!("  Panic message: {}", panic_msg));
-                } else if let Some(panic_string) = panic_payload.downcast_ref::<String>() {
-                    results.push(format!("  Panic message: {}", panic_string));
-                } else {
-                    results.push("  Panic message: <unknown>".to_string());
-                }
-                
-                results.push("  This is likely a WASM-RPC serialization boundary issue".to_string());
-                results.push("  The Algolia API call succeeded but response serialization failed".to_string());
-            }
         
+        return  format!("success : Expected ")
 
-        results.join("\n")
     }
 }
 

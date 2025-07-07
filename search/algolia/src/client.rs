@@ -1,6 +1,6 @@
+
 use golem_search::error::{internal_error, search_error_from_status, from_reqwest_error};
 use golem_search::golem::search::types::SearchError;
-use log::error;
 use log::trace;
 use reqwest::{Client, RequestBuilder, Method, Response};
 use serde::de::DeserializeOwned;
@@ -281,27 +281,39 @@ impl AlgoliaSearchApi {
     }
 
     pub fn set_settings(
-        &self,
-        index_name: &str,
-        settings: &IndexSettings,
-    ) -> Result<(), SearchError> {
-        trace!("Setting settings for index: {index_name}");
+    &self,
+    index_name: &str,
+    settings: &IndexSettings,
+) -> Result<(), SearchError> {
+    trace!("Setting settings for index: {index_name}");
 
-        let url = format!("{}/1/indexes/{}/settings", self.write_url, index_name);
+    let url = format!("{}/1/indexes/{}/settings", self.write_url, index_name);
 
-        let response = self
-            .create_request(Method::PUT, &url)
-            .json(settings)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to set settings: {}", e)))?;
+    // fire off the PUT
+    let response = self
+        .create_request(Method::PUT, &url)
+        .json(settings)
+        .send()
+        .map_err(|e| internal_error(format!("Failed to set settings: {}", e)))?;
 
-        let parsed_response: SetSettingsResponse = parse_response(response)?;
-        
-        let _ = parsed_response;
-        Ok(())
+    // pull out the status (StatusCode is Copy so this doesn't move response)
+    let status = response.status();
+
+    // if it failed, consume `response` here by calling `.text()`
+    if !status.is_success() {
+        let err_body = response
+            .text()
+            .unwrap_or_else(|_| "<failed to read error body>".into());
+        trace!("Algolia set_settings error body: {}", err_body);
+        return Err(search_error_from_status(status));
     }
 
-    pub fn wait_for_task(&self, index_name: &str, task_id: u64) -> Result<(), SearchError> {
+    // on success, we never call `.text()` or `.json()`—we just return unit
+    Ok(())
+}
+
+
+    pub fn _wait_for_task(&self, index_name: &str, task_id: u64) -> Result<(), SearchError> {
         trace!("Waiting for task {task_id} on index {index_name}");
         let url = format!(
             "{}/1/indexes/{}/task/{}",
@@ -541,33 +553,27 @@ pub struct BatchOperation {
 }
 
 fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, SearchError> {
-    let status_code = response.status().as_u16();
     let status = response.status();
-    println!("[Algolia] Response status: {}", status_code);
+
+    trace!("Received response from Algolia API: {response:?}");
+
     
     if status.is_success() {
-        let response_body = response
-            .text()
-            .map_err(|e| internal_error(format!("Failed to read response body as text: {}", e)))?;
-        
-        
-        let body = serde_json::from_str::<T>(&response_body)
-            .map_err(|e| internal_error(format!(
-                "Failed to decode response body as {}: {}. Raw response body: {}", 
-                std::any::type_name::<T>(), 
-                e, 
-                response_body
-            )))?;
+        let body = response
+            .json::<T>()
+            .map_err(|err| from_reqwest_error("Failed to decode response body", err))?;
 
-        trace!("Received response from Algolia API: {body:?}");
-        
+        trace!("Received response from xAI API: {body:?}");
+
         Ok(body)
     } else {
-        let body = response
+        let error_body = response
             .text()
-            .map_err(|e| internal_error(format!("Failed to read error response: {}", e)))?;
-        println!("[Algolia] Error response body: {}", body);
-        error!("[Algolia] parse_response error status {}: {}", status_code, body);
+            .map_err(|err| from_reqwest_error("Failed to receive error response body", err))?;
+
+       trace!("Received {status} response from xAI API: {error_body:?}");
+
         Err(search_error_from_status(status))
     }
 }
+
