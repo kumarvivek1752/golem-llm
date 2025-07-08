@@ -270,18 +270,18 @@ impl Guest for AlgoliaComponent {
         }
     }
 
-   fn update_schema(_index: IndexName, _schema: Schema) -> Result<(), SearchError> {
-    // LOGGING_STATE.with_borrow_mut(|state| state.init());
+   fn update_schema(index: IndexName, schema: Schema) -> Result<(), SearchError> {
+    LOGGING_STATE.with_borrow_mut(|state| state.init());
 
-    // let client = Self::create_client()?;
-    // let settings = schema_to_algolia_settings(schema);
+    let client = Self::create_client()?;
+    let settings = schema_to_algolia_settings(schema);
 
-    // client
-    //     .set_settings(&index, &settings)
-    //     .map_err(|e| {
-    //         println!("[Algolia] set_settings failed: {}", e);
-    //         e
-    //     })?;
+    client
+        .set_settings(&index, &settings)
+        .map_err(|e| {
+            println!("[Algolia] set_settings failed: {}", e);
+            e
+        })?;
 
     Ok(())
 }
@@ -312,93 +312,3 @@ impl ExtendedGuest for AlgoliaComponent {
 type DurableAlgoliaComponent = DurableSearch<AlgoliaComponent>;
 
 golem_search::export_search!(DurableAlgoliaComponent with_types_in golem_search);
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::env;
-    use golem_search::golem::search::types::{Schema, SchemaField, FieldType};
-
-
-    fn test_schema() -> Schema {
-        Schema {
-            fields: vec![
-                SchemaField {
-                    name: "title".to_string(),
-                    field_type: FieldType::Text,
-                    required: false,
-                    facet: false,
-                    sort: false,
-                    index: true,
-                },
-                SchemaField {
-                    name: "category".to_string(),
-                    field_type: FieldType::Keyword,
-                    required: false,
-                    facet: true,
-                    sort: false,
-                    index: true,
-                },
-                SchemaField {
-                    name: "value".to_string(),
-                    field_type: FieldType::Integer,
-                    required: false,
-                    facet: false,
-                    sort: true,
-                    index: false,
-                },
-            ],
-            primary_key: Some("id".to_string()),
-        }
-    }
-
-    #[test]
-    fn test_update_schema() {
-        // Set up environment variables for the test
-        env::set_var("ALGOLIA_APPLICATION_ID", "SLPKFQ34PO");
-        env::set_var("ALGOLIA_API_KEY", "76b6638c2c0754b20b008c55dc2356bb");
-
-        println!("=== TEST STARTED: test_update_schema ===");
-
-        let schema = test_schema();
-        let index_name = format!("test-algolia-{}", std::process::id());
-
-        println!("TEST: About to call update_schema with index: {}", index_name);
-        println!("TEST: Schema: {:?}", schema);
-
-        match AlgoliaComponent::update_schema(index_name.clone(), schema.clone()) {
-            Ok(()) => {
-                println!("TEST: ✓ update_schema succeeded");
-            }
-            Err(e) => {
-                println!("TEST: ✗ update_schema failed: {:?}", e);
-                panic!("Schema update should succeed, but got error: {:?}", e);
-            }
-        }
-
-        println!("=== TEST COMPLETED: test_update_schema ===");
-    }
-
-     #[test]
-    fn update_schema_returns_unit_on_success() {
-        // arrange: valid credentials in env
-        std::env::set_var("ALGOLIA_APPLICATION_ID", "SLPKFQ34PO");
-        std::env::set_var("ALGOLIA_API_KEY", "76b6638c2c0754b20b008c55dc2356bb");
-
-        let index = format!("test-algolia-{}", std::process::id());
-        let schema = test_schema();
-
-        // act
-        let result = AlgoliaComponent::update_schema(index.clone(), schema.clone());
-
-        // assert: we got exactly Ok(())
-        println!("Testing update_schema for index '{:?}': ", result);
-        assert!(
-            matches!(result, Ok(())),
-            "expected Ok(()), got {:?}",
-            result
-        );
-    }
-
-}

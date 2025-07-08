@@ -264,84 +264,84 @@ pub fn create_retry_query(original_query: &SearchQuery, partial_hits: &[SearchHi
     retry_query
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use golem_search::golem::search::types::HighlightConfig;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use golem_search::golem::search::types::HighlightConfig;
 
-//     #[test]
-//     fn test_doc_to_algolia_object() {
-//         let doc = Doc {
-//             id: "test-id".to_string(),
-//             content: r#"{"title": "Test Document", "content": "This is a test"}"#.to_string(),
-//         };
+    #[test]
+    fn test_doc_to_algolia_object() {
+        let doc = Doc {
+            id: "test-id".to_string(),
+            content: r#"{"title": "Test Document", "content": "This is a test"}"#.to_string(),
+        };
 
-//         let algolia_obj = doc_to_algolia_object(doc).unwrap();
-//         assert_eq!(algolia_obj.object_id, Some("test-id".to_string()));
-//         assert_eq!(algolia_obj.content["title"], "Test Document");
-//     }
+        let algolia_obj = doc_to_algolia_object(doc).unwrap();
+        assert_eq!(algolia_obj.object_id, Some("test-id".to_string()));
+        assert_eq!(algolia_obj.content["title"], "Test Document");
+    }
 
-//     #[test]
-//     fn test_search_query_conversion() {
-//         let search_query = SearchQuery {
-//             q: Some("test query".to_string()),
-//             filters: vec!["category:electronics".to_string(), "price:>100".to_string()],
-//             sort: vec!["price:desc".to_string()],
-//             facets: vec!["category".to_string(), "brand".to_string()],
-//             page: Some(1),
-//             per_page: Some(20),
-//             offset: None,
-//             highlight: Some(HighlightConfig {
-//                 fields: vec!["title".to_string()],
-//                 pre_tag: Some("<em>".to_string()),
-//                 post_tag: Some("</em>".to_string()),
-//                 max_length: Some(200),
-//             }),
-//             config: None,
-//         };
+    #[test]
+    fn test_search_query_conversion() {
+        let search_query = SearchQuery {
+            q: Some("test query".to_string()),
+            filters: vec!["category:electronics".to_string(), "price:>100".to_string()],
+            sort: vec!["price:desc".to_string()],
+            facets: vec!["category".to_string(), "brand".to_string()],
+            page: Some(1),
+            per_page: Some(20),
+            offset: None,
+            highlight: Some(HighlightConfig {
+                fields: vec!["title".to_string()],
+                pre_tag: Some("<em>".to_string()),
+                post_tag: Some("</em>".to_string()),
+                max_length: Some(200),
+            }),
+            config: None,
+        };
 
-//         let algolia_query = search_query_to_algolia_query(search_query);
-//         assert_eq!(algolia_query.query, Some("test query".to_string()));
-//         assert_eq!(algolia_query.facets, vec!["category".to_string(), "brand".to_string()]);
-//         // Note: Highlight parameters are handled at the index level, not in search queries
-//     }
+        let algolia_query = search_query_to_algolia_query(search_query);
+        assert_eq!(algolia_query.query, Some("test query".to_string()));
+        assert_eq!(algolia_query.facets, vec!["category".to_string(), "brand".to_string()]);
+        // Note: Highlight parameters are handled at the index level, not in search queries
+    }
 
-//     #[test]
-//     fn test_schema_conversion() {
-//         let schema = Schema {
-//             fields: vec![
-//                 SchemaField {
-//                     name: "title".to_string(),
-//                     field_type: FieldType::Text,
-//                     required: true,
-//                     facet: false,
-//                     sort: false,
-//                     index: true,
-//                 },
-//                 SchemaField {
-//                     name: "category".to_string(),
-//                     field_type: FieldType::Keyword,
-//                     required: false,
-//                     facet: true,
-//                     sort: false,
-//                     index: false,
-//                 },
-//                 SchemaField {
-//                     name: "price".to_string(),
-//                     field_type: FieldType::Float,
-//                     required: false,
-//                     facet: false,
-//                     sort: true,
-//                     index: false,
-//                 },
-//             ],
-//             primary_key: Some("id".to_string()),
-//         };
+    #[test]
+    fn test_schema_conversion() {
+        let schema = Schema {
+            fields: vec![
+                SchemaField {
+                    name: "title".to_string(),
+                    field_type: FieldType::Text,
+                    required: true,
+                    facet: false,
+                    sort: false,
+                    index: true,
+                },
+                SchemaField {
+                    name: "category".to_string(),
+                    field_type: FieldType::Keyword,
+                    required: false,
+                    facet: true,
+                    sort: false,
+                    index: false,
+                },
+                SchemaField {
+                    name: "price".to_string(),
+                    field_type: FieldType::Float,
+                    required: false,
+                    facet: false,
+                    sort: true,
+                    index: false,
+                },
+            ],
+            primary_key: Some("id".to_string()),
+        };
 
-//         let settings = schema_to_algolia_settings(schema);
-//         assert!(settings.searchable_attributes.contains(&"title".to_string()));
-//         assert!(settings.attributes_for_faceting.contains(&"category".to_string()));
-//         assert!(settings.custom_ranking.contains(&"desc(price)".to_string()));
-//         // Note: Algolia doesn't support primary_key in settings
-//     }
-// }
+        let settings = schema_to_algolia_settings(schema);
+        assert!(settings.searchable_attributes.contains(&"title".to_string()));
+        assert!(settings.attributes_for_faceting.contains(&"category".to_string()));
+        assert!(settings.custom_ranking.contains(&"desc(price)".to_string()));
+        // Note: Algolia doesn't support primary_key in settings
+    }
+}

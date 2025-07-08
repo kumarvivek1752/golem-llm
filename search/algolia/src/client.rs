@@ -82,25 +82,6 @@ impl AlgoliaSearchApi {
             .header("Content-Type", "application/json")
     }
 
-    // pub fn update_index_settings(
-    //     &self,
-    //     index_name: &str,
-    //     settings: Option<IndexSettings>,
-    // ) -> Result<UpdateIndexResponse, SearchError> {
-    //     trace!("Updating index settings: {index_name}");
-
-    //     let url = format!("{}/1/indexes/{}/settings", self.write_url, index_name);
-    //     let body = settings.unwrap_or_default();
-
-    //     let response = self
-    //         .create_request("PUT", &url)
-    //         .json(&body)
-    //         .send()
-    //         .map_err(|e| internal_error(format!("Failed to create index: {}", e)))?;
-
-    //     parse_response(response)
-    // }
-
     pub fn delete_index(&self, index_name: &str) -> Result<DeleteIndexResponse, SearchError> {
         trace!("Deleting index: {index_name}");
 
@@ -284,7 +265,7 @@ impl AlgoliaSearchApi {
     &self,
     index_name: &str,
     settings: &IndexSettings,
-) -> Result<(), SearchError> {
+) -> Result<SetSettingsResponse, SearchError> {
     trace!("Setting settings for index: {index_name}");
 
     let url = format!("{}/1/indexes/{}/settings", self.write_url, index_name);
@@ -296,18 +277,8 @@ impl AlgoliaSearchApi {
         .send()
         .map_err(|e| internal_error(format!("Failed to set settings: {}", e)))?;
 
-    let status = response.status();
-
-    if !status.is_success() {
-        let err_body = response
-            .text()
-            .unwrap_or_else(|_| "<failed to read error body>".into());
-        trace!("Algolia set_settings error body: {}", err_body);
-        return Err(search_error_from_status(status));
-    }
-
-    Ok(())
-}
+    parse_response(response)
+ }
 
 
     pub fn _wait_for_task(&self, index_name: &str, task_id: u64) -> Result<(), SearchError> {
@@ -381,8 +352,6 @@ pub struct SearchQuery {
     pub length: Option<u32>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub facets: Vec<String>,
-    // Removed highlight_pre_tag as it's not supported in search query parameters
-    // (Algolia handles highlighting automatically and returns _highlightResult)
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub attributes_to_retrieve: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -451,14 +420,6 @@ pub struct RankingInfo {
     pub words: u32,
     pub filters: u32,
 }
-
-// #[derive(Debug, Clone, Serialize, Deserialize)]
-// pub struct UpdateIndexResponse {
-//     #[serde(rename = "taskID")]
-//     pub task_id: u64,
-//     #[serde(rename = "updatedAt")]
-//     pub updated_at: String,
-// }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteIndexResponse {
@@ -573,4 +534,3 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, 
         Err(search_error_from_status(status))
     }
 }
-
