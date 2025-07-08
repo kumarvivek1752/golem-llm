@@ -1,7 +1,7 @@
-use golem_search::error::{search_error_from_status, internal_error, from_reqwest_error};
+use golem_search::error::{search_error_from_status, internal_error};
 use golem_search::golem::search::types::SearchError;
 use log::trace;
-use reqwest::{Client, RequestBuilder, Response};
+use ureq::{Agent, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, Map as JsonMap};
@@ -9,7 +9,7 @@ use std::fmt::Debug;
 
 #[derive(Debug, Clone)]
 pub struct MeilisearchApi {
-    client: Client,
+    agent: Agent,
     base_url: String,
     api_key: Option<String>,
 }
@@ -184,29 +184,20 @@ pub struct MeilisearchSettings {
 
 impl MeilisearchApi {
     pub fn new(base_url: String, api_key: Option<String>) -> Self {
-        let client = Client::builder()
-            .build()
-            .expect("Failed to initialize HTTP client");
+        let agent = Agent::new();
         
-        Self { client, base_url, api_key }
+        Self { agent, base_url, api_key }
     }
 
-    fn create_request(&self, method: &str, url: &str) -> RequestBuilder {
+    fn create_request(&self, method: &str, url: &str) -> ureq::Request {
         trace!("[Meilisearch] HTTP {} {}", method, url);
         
-        let mut req = match method {
-            "GET" => self.client.get(url),
-            "POST" => self.client.post(url),
-            "PUT" => self.client.put(url),
-            "DELETE" => self.client.delete(url),
-            "PATCH" => self.client.patch(url),
-            _ => self.client.request(reqwest::Method::from_bytes(method.as_bytes()).unwrap(), url),
-        };
+        let mut req = self.agent.request(method, url);
         
         if let Some(api_key) = &self.api_key {
-            req = req.header("Authorization", format!("Bearer {}", api_key));
+            req = req.set("Authorization", &format!("Bearer {}", api_key));
         }
-        req = req.header("Content-Type", "application/json");
+        req = req.set("Content-Type", "application/json");
         
         req
     }
@@ -214,25 +205,27 @@ impl MeilisearchApi {
 
 /// Helper function to parse HTTP responses and handle errors
 fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, SearchError> {
-    let status = response.status();
+    let status_code = response.status();
     
-    trace!("Received response from Meilisearch API: {response:?}");
-    
-    if status.is_success() {
-        let body = response
-            .json::<T>()
-            .map_err(|err| from_reqwest_error("Failed to decode response body", err))?;
-
-        trace!("Received response from Meilisearch API: {body:?}");
-
+    if status_code >= 200 && status_code < 300 {
+        let body_str = response
+            .into_string()
+            .map_err(|e| internal_error(format!("Failed to read response: {}", e)))?;
+        
+        let body: T = serde_json::from_str(&body_str)
+            .map_err(|e| internal_error(format!("Failed to parse response: {} | body: {}", e, body_str)))?;
+        
         Ok(body)
     } else {
-        let error_body = response
-            .text()
-            .map_err(|err| from_reqwest_error("Failed to receive error response body", err))?;
-
-        trace!("Received {status} response from Meilisearch API: {error_body:?}");
-
+        let body = response
+            .into_string()
+            .map_err(|e| internal_error(format!("Failed to read error response: {}", e)))?;
+        
+        // Convert status code to reqwest::StatusCode for compatibility with existing error handling
+        let status = reqwest::StatusCode::from_u16(status_code)
+            .unwrap_or(reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+        
+        trace!("Meilisearch error response: {}", body);
         Err(search_error_from_status(status))
     }
 }
@@ -246,7 +239,7 @@ impl MeilisearchApi {
         
         let response = self
             .create_request("GET", &url)
-            .send()
+            .call()
             .map_err(|e| internal_error(format!("Failed to list indexes: {}", e)))?;
 
         parse_response(response)
@@ -259,7 +252,7 @@ impl MeilisearchApi {
         
         let response = self
             .create_request("GET", &url)
-            .send()
+            .call()
             .map_err(|e| internal_error(format!("Failed to get index: {}", e)))?;
 
         parse_response(response)
@@ -269,11 +262,12 @@ impl MeilisearchApi {
         trace!("Creating index: {}", request.uid);
         
         let url = format!("{}/indexes", self.base_url);
+        let body = serde_json::to_string(request)
+            .map_err(|e| internal_error(format!("Failed to serialize request: {}", e)))?;
         
         let response = self
             .create_request("POST", &url)
-            .json(request)
-            .send()
+            .send_string(&body)
             .map_err(|e| internal_error(format!("Failed to create index: {}", e)))?;
 
         parse_response(response)
@@ -286,7 +280,7 @@ impl MeilisearchApi {
         
         let response = self
             .create_request("DELETE", &url)
-            .send()
+            .call()
             .map_err(|e| internal_error(format!("Failed to delete index: {}", e)))?;
 
         parse_response(response)
@@ -297,11 +291,12 @@ impl MeilisearchApi {
         trace!("Getting documents from index: {}", index_uid);
         
         let url = format!("{}/indexes/{}/documents/fetch", self.base_url, index_uid);
+        let body = serde_json::to_string(request)
+            .map_err(|e| internal_error(format!("Failed to serialize request: {}", e)))?;
         
         let response = self
             .create_request("POST", &url)
-            .json(request)
-            .send()
+            .send_string(&body)
             .map_err(|e| internal_error(format!("Failed to get documents: {}", e)))?;
 
         parse_response(response)
@@ -314,7 +309,7 @@ impl MeilisearchApi {
         
         let response = self
             .create_request("GET", &url)
-            .send()
+            .call()
             .map_err(|e| internal_error(format!("Failed to get document: {}", e)))?;
 
         if response.status() == 404 {
@@ -328,11 +323,12 @@ impl MeilisearchApi {
         trace!("Adding {} documents to index: {}", documents.len(), index_uid);
         
         let url = format!("{}/indexes/{}/documents", self.base_url, index_uid);
+        let body = serde_json::to_string(documents)
+            .map_err(|e| internal_error(format!("Failed to serialize documents: {}", e)))?;
         
         let response = self
             .create_request("POST", &url)
-            .json(documents)
-            .send()
+            .send_string(&body)
             .map_err(|e| internal_error(format!("Failed to add documents: {}", e)))?;
 
         parse_response(response)
@@ -342,11 +338,12 @@ impl MeilisearchApi {
         trace!("Updating {} documents in index: {}", documents.len(), index_uid);
         
         let url = format!("{}/indexes/{}/documents", self.base_url, index_uid);
+        let body = serde_json::to_string(documents)
+            .map_err(|e| internal_error(format!("Failed to serialize documents: {}", e)))?;
         
         let response = self
             .create_request("PUT", &url)
-            .json(documents)
-            .send()
+            .send_string(&body)
             .map_err(|e| internal_error(format!("Failed to update documents: {}", e)))?;
 
         parse_response(response)
@@ -359,7 +356,7 @@ impl MeilisearchApi {
         
         let response = self
             .create_request("DELETE", &url)
-            .send()
+            .call()
             .map_err(|e| internal_error(format!("Failed to delete document: {}", e)))?;
 
         parse_response(response)
@@ -369,11 +366,12 @@ impl MeilisearchApi {
         trace!("Deleting {} documents from index: {}", document_ids.len(), index_uid);
         
         let url = format!("{}/indexes/{}/documents/delete-batch", self.base_url, index_uid);
+        let body = serde_json::to_string(document_ids)
+            .map_err(|e| internal_error(format!("Failed to serialize document IDs: {}", e)))?;
         
         let response = self
             .create_request("POST", &url)
-            .json(document_ids)
-            .send()
+            .send_string(&body)
             .map_err(|e| internal_error(format!("Failed to delete documents: {}", e)))?;
 
         parse_response(response)
@@ -386,7 +384,7 @@ impl MeilisearchApi {
         
         let response = self
             .create_request("DELETE", &url)
-            .send()
+            .call()
             .map_err(|e| internal_error(format!("Failed to delete all documents: {}", e)))?;
 
         parse_response(response)
@@ -397,11 +395,12 @@ impl MeilisearchApi {
         trace!("Searching in index: {}", index_uid);
         
         let url = format!("{}/indexes/{}/search", self.base_url, index_uid);
+        let body = serde_json::to_string(request)
+            .map_err(|e| internal_error(format!("Failed to serialize search request: {}", e)))?;
         
         let response = self
             .create_request("POST", &url)
-            .json(request)
-            .send()
+            .send_string(&body)
             .map_err(|e| internal_error(format!("Failed to search: {}", e)))?;
 
         parse_response(response)
@@ -415,7 +414,7 @@ impl MeilisearchApi {
         
         let response = self
             .create_request("GET", &url)
-            .send()
+            .call()
             .map_err(|e| internal_error(format!("Failed to get settings: {}", e)))?;
 
         parse_response(response)
@@ -425,11 +424,12 @@ impl MeilisearchApi {
         trace!("Updating settings for index: {}", index_uid);
         
         let url = format!("{}/indexes/{}/settings", self.base_url, index_uid);
+        let body = serde_json::to_string(settings)
+            .map_err(|e| internal_error(format!("Failed to serialize settings: {}", e)))?;
         
         let response = self
             .create_request("PATCH", &url)
-            .json(settings)
-            .send()
+            .send_string(&body)
             .map_err(|e| internal_error(format!("Failed to update settings: {}", e)))?;
 
         parse_response(response)
@@ -442,7 +442,7 @@ impl MeilisearchApi {
         
         let response = self
             .create_request("DELETE", &url)
-            .send()
+            .call()
             .map_err(|e| internal_error(format!("Failed to reset settings: {}", e)))?;
 
         parse_response(response)
@@ -456,7 +456,7 @@ impl MeilisearchApi {
         
         let response = self
             .create_request("GET", &url)
-            .send()
+            .call()
             .map_err(|e| internal_error(format!("Failed to get task: {}", e)))?;
 
         parse_response(response)

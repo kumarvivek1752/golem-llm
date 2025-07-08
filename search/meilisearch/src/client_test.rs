@@ -1,7 +1,8 @@
-use golem_search::error::{search_error_from_status, internal_error, from_reqwest_error};
+use golem_search::error::{search_error_from_status, from_reqwest_error};
 use golem_search::golem::search::types::SearchError;
 use log::trace;
-use reqwest::{Client, RequestBuilder, Response};
+use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::{Client, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, Map as JsonMap};
@@ -44,42 +45,18 @@ pub struct MeilisearchCreateIndexRequest {
     pub primary_key: Option<String>,
 }
 
-// Meilisearch Task Error response
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MeilisearchTaskError {
-    pub message: String,
-    pub code: String,
-    #[serde(rename = "type")]
-    pub error_type: String,
-    pub link: String,
-}
-
 // Meilisearch Task response (for async operations)
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MeilisearchTask {
-    #[serde(rename = "taskUid", alias = "uid")]
+    #[serde(rename = "taskUid")]
     pub task_uid: u64,
-    #[serde(rename = "indexUid", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "indexUid")]
     pub index_uid: Option<String>,
-    #[serde(rename = "batchUid", skip_serializing_if = "Option::is_none")]
-    pub batch_uid: Option<u64>,
     pub status: String,
     #[serde(rename = "type")]
     pub task_type: String,
     #[serde(rename = "enqueuedAt")]
     pub enqueued_at: String,
-    #[serde(rename = "startedAt", skip_serializing_if = "Option::is_none")]
-    pub started_at: Option<String>,
-    #[serde(rename = "finishedAt", skip_serializing_if = "Option::is_none")]
-    pub finished_at: Option<String>,
-    #[serde(rename = "canceledBy", skip_serializing_if = "Option::is_none")]
-    pub canceled_by: Option<JsonValue>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub details: Option<JsonValue>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<MeilisearchTaskError>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub duration: Option<String>,
 }
 
 // Meilisearch Document
@@ -191,24 +168,13 @@ impl MeilisearchApi {
         Self { client, base_url, api_key }
     }
 
-    fn create_request(&self, method: &str, url: &str) -> RequestBuilder {
-        trace!("[Meilisearch] HTTP {} {}", method, url);
-        
-        let mut req = match method {
-            "GET" => self.client.get(url),
-            "POST" => self.client.post(url),
-            "PUT" => self.client.put(url),
-            "DELETE" => self.client.delete(url),
-            "PATCH" => self.client.patch(url),
-            _ => self.client.request(reqwest::Method::from_bytes(method.as_bytes()).unwrap(), url),
-        };
-        
+    fn create_headers(&self) -> HeaderMap {
+        let mut headers = HeaderMap::new();
         if let Some(api_key) = &self.api_key {
-            req = req.header("Authorization", format!("Bearer {}", api_key));
+            headers.insert("Authorization", HeaderValue::from_str(&format!("Bearer {}", api_key)).unwrap());
         }
-        req = req.header("Content-Type", "application/json");
-        
-        req
+        headers.insert("Content-Type", HeaderValue::from_static("application/json"));
+        headers
     }
 }
 
@@ -216,28 +182,18 @@ impl MeilisearchApi {
 fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, SearchError> {
     let status = response.status();
     
-    trace!("Received response from Meilisearch API: {response:?}");
-    
     if status.is_success() {
-        let body = response
-            .json::<T>()
-            .map_err(|err| from_reqwest_error("Failed to decode response body", err))?;
-
-        trace!("Received response from Meilisearch API: {body:?}");
-
-        Ok(body)
+        let text = response.text()
+            .map_err(|e| from_reqwest_error("Failed to read response text", e))?;
+        serde_json::from_str(&text)
+            .map_err(|e| SearchError::Internal(format!("Failed to parse JSON response: {}", e)))
     } else {
-        let error_body = response
-            .text()
-            .map_err(|err| from_reqwest_error("Failed to receive error response body", err))?;
-
-        trace!("Received {status} response from Meilisearch API: {error_body:?}");
-
         Err(search_error_from_status(status))
     }
 }
 
 impl MeilisearchApi {
+
     // Index Management
     pub fn list_indexes(&self) -> Result<MeilisearchIndexListResponse, SearchError> {
         trace!("Listing indexes");
@@ -245,9 +201,11 @@ impl MeilisearchApi {
         let url = format!("{}/indexes", self.base_url);
         
         let response = self
-            .create_request("GET", &url)
+            .client
+            .get(&url)
+            .headers(self.create_headers())
             .send()
-            .map_err(|e| internal_error(format!("Failed to list indexes: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to list indexes", e))?;
 
         parse_response(response)
     }
@@ -258,9 +216,11 @@ impl MeilisearchApi {
         let url = format!("{}/indexes/{}", self.base_url, index_uid);
         
         let response = self
-            .create_request("GET", &url)
+            .client
+            .get(&url)
+            .headers(self.create_headers())
             .send()
-            .map_err(|e| internal_error(format!("Failed to get index: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to get index", e))?;
 
         parse_response(response)
     }
@@ -271,10 +231,12 @@ impl MeilisearchApi {
         let url = format!("{}/indexes", self.base_url);
         
         let response = self
-            .create_request("POST", &url)
+            .client
+            .post(&url)
+            .headers(self.create_headers())
             .json(request)
             .send()
-            .map_err(|e| internal_error(format!("Failed to create index: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to create index", e))?;
 
         parse_response(response)
     }
@@ -285,9 +247,11 @@ impl MeilisearchApi {
         let url = format!("{}/indexes/{}", self.base_url, index_uid);
         
         let response = self
-            .create_request("DELETE", &url)
+            .client
+            .delete(&url)
+            .headers(self.create_headers())
             .send()
-            .map_err(|e| internal_error(format!("Failed to delete index: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to delete index", e))?;
 
         parse_response(response)
     }
@@ -299,10 +263,12 @@ impl MeilisearchApi {
         let url = format!("{}/indexes/{}/documents/fetch", self.base_url, index_uid);
         
         let response = self
-            .create_request("POST", &url)
+            .client
+            .post(&url)
+            .headers(self.create_headers())
             .json(request)
             .send()
-            .map_err(|e| internal_error(format!("Failed to get documents: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to get documents", e))?;
 
         parse_response(response)
     }
@@ -313,11 +279,13 @@ impl MeilisearchApi {
         let url = format!("{}/indexes/{}/documents/{}", self.base_url, index_uid, document_id);
         
         let response = self
-            .create_request("GET", &url)
+            .client
+            .get(&url)
+            .headers(self.create_headers())
             .send()
-            .map_err(|e| internal_error(format!("Failed to get document: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to get document", e))?;
 
-        if response.status() == 404 {
+        if response.status().as_u16() == 404 {
             Ok(None)
         } else {
             Ok(Some(parse_response(response)?))
@@ -330,10 +298,12 @@ impl MeilisearchApi {
         let url = format!("{}/indexes/{}/documents", self.base_url, index_uid);
         
         let response = self
-            .create_request("POST", &url)
+            .client
+            .post(&url)
+            .headers(self.create_headers())
             .json(documents)
             .send()
-            .map_err(|e| internal_error(format!("Failed to add documents: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to add documents", e))?;
 
         parse_response(response)
     }
@@ -344,10 +314,12 @@ impl MeilisearchApi {
         let url = format!("{}/indexes/{}/documents", self.base_url, index_uid);
         
         let response = self
-            .create_request("PUT", &url)
+            .client
+            .put(&url)
+            .headers(self.create_headers())
             .json(documents)
             .send()
-            .map_err(|e| internal_error(format!("Failed to update documents: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to update documents", e))?;
 
         parse_response(response)
     }
@@ -358,9 +330,11 @@ impl MeilisearchApi {
         let url = format!("{}/indexes/{}/documents/{}", self.base_url, index_uid, document_id);
         
         let response = self
-            .create_request("DELETE", &url)
+            .client
+            .delete(&url)
+            .headers(self.create_headers())
             .send()
-            .map_err(|e| internal_error(format!("Failed to delete document: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to delete document", e))?;
 
         parse_response(response)
     }
@@ -371,10 +345,12 @@ impl MeilisearchApi {
         let url = format!("{}/indexes/{}/documents/delete-batch", self.base_url, index_uid);
         
         let response = self
-            .create_request("POST", &url)
+            .client
+            .post(&url)
+            .headers(self.create_headers())
             .json(document_ids)
             .send()
-            .map_err(|e| internal_error(format!("Failed to delete documents: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to delete documents", e))?;
 
         parse_response(response)
     }
@@ -385,9 +361,11 @@ impl MeilisearchApi {
         let url = format!("{}/indexes/{}/documents", self.base_url, index_uid);
         
         let response = self
-            .create_request("DELETE", &url)
+            .client
+            .delete(&url)
+            .headers(self.create_headers())
             .send()
-            .map_err(|e| internal_error(format!("Failed to delete all documents: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to delete all documents", e))?;
 
         parse_response(response)
     }
@@ -399,10 +377,12 @@ impl MeilisearchApi {
         let url = format!("{}/indexes/{}/search", self.base_url, index_uid);
         
         let response = self
-            .create_request("POST", &url)
+            .client
+            .post(&url)
+            .headers(self.create_headers())
             .json(request)
             .send()
-            .map_err(|e| internal_error(format!("Failed to search: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to search", e))?;
 
         parse_response(response)
     }
@@ -414,9 +394,11 @@ impl MeilisearchApi {
         let url = format!("{}/indexes/{}/settings", self.base_url, index_uid);
         
         let response = self
-            .create_request("GET", &url)
+            .client
+            .get(&url)
+            .headers(self.create_headers())
             .send()
-            .map_err(|e| internal_error(format!("Failed to get settings: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to get settings", e))?;
 
         parse_response(response)
     }
@@ -427,10 +409,12 @@ impl MeilisearchApi {
         let url = format!("{}/indexes/{}/settings", self.base_url, index_uid);
         
         let response = self
-            .create_request("PATCH", &url)
+            .client
+            .patch(&url)
+            .headers(self.create_headers())
             .json(settings)
             .send()
-            .map_err(|e| internal_error(format!("Failed to update settings: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to update settings", e))?;
 
         parse_response(response)
     }
@@ -441,9 +425,11 @@ impl MeilisearchApi {
         let url = format!("{}/indexes/{}/settings", self.base_url, index_uid);
         
         let response = self
-            .create_request("DELETE", &url)
+            .client
+            .delete(&url)
+            .headers(self.create_headers())
             .send()
-            .map_err(|e| internal_error(format!("Failed to reset settings: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to reset settings", e))?;
 
         parse_response(response)
     }
@@ -455,21 +441,14 @@ impl MeilisearchApi {
         let url = format!("{}/tasks/{}", self.base_url, task_uid);
         
         let response = self
-            .create_request("GET", &url)
+            .client
+            .get(&url)
+            .headers(self.create_headers())
             .send()
-            .map_err(|e| internal_error(format!("Failed to get task: {}", e)))?;
+            .map_err(|e| from_reqwest_error("Failed to get task", e))?;
 
         parse_response(response)
     }
-
-    /// Production-level wait_for_task with exponential backoff
-    /// 
-    /// This function implements a robust polling mechanism with:
-    /// - Exponential backoff starting at 100ms, doubling each retry, capped at 5 seconds
-    /// - Maximum attempts configurable (default 30, allowing up to ~2.5 minutes of waiting)
-    /// - Jitter to prevent thundering herd effects
-    /// - Detailed logging for debugging
-   
 
     pub fn wait_for_task(&self, task_uid: u64) -> Result<(), SearchError> {
         trace!("Waiting for task: {}", task_uid);
@@ -492,3 +471,65 @@ impl MeilisearchApi {
     }
 }
 
+
+ pub fn wait_for_task(&self, task_uid: u64) -> Result<(), SearchError> {
+        self.wait_for_task_with_config(task_uid, 30, Duration::from_millis(100), Duration::from_secs(5))
+    }
+
+    /// Production-level wait_for_task with configurable parameters
+    pub fn wait_for_task_with_config(
+        &self, 
+        task_uid: u64, 
+        max_attempts: u32,
+        initial_delay: Duration,
+        max_delay: Duration
+    ) -> Result<(), SearchError> {
+        trace!("Waiting for task {} with exponential backoff (max_attempts: {}, initial_delay: {:?}, max_delay: {:?})", 
+               task_uid, max_attempts, initial_delay, max_delay);
+        
+        let mut delay = initial_delay;
+        
+        for attempt in 1..=max_attempts {
+            let task = self.get_task(task_uid)?;
+            trace!("Task {} attempt {}/{}: status = {}", task_uid, attempt, max_attempts, task.status);
+            
+            match task.status.as_str() {
+                "succeeded" => {
+                    trace!("Task {} completed successfully after {} attempts", task_uid, attempt);
+                    return Ok(());
+                },
+                "failed" => {
+                    let error_msg = format!("Task {} failed after {} attempts", task_uid, attempt);
+                    trace!("{}", error_msg);
+                    return Err(SearchError::Internal(error_msg));
+                },
+                "canceled" => {
+                    let error_msg = format!("Task {} was canceled after {} attempts", task_uid, attempt);
+                    trace!("{}", error_msg);
+                    return Err(SearchError::Internal(error_msg));
+                },
+                status => {
+                    trace!("Task {} is still {}, waiting {:?} before retry {}/{}", 
+                           task_uid, status, delay, attempt, max_attempts);
+                    
+                    // Sleep for the current delay
+                    std::thread::sleep(delay);
+                    
+                    // Calculate next delay with exponential backoff and jitter
+                    let next_delay = std::cmp::min(delay * 2, max_delay);
+                    
+                    // Add jitter (10% random variation) to prevent thundering herd
+                    let jitter_range = next_delay.as_millis() / 10; // 10% jitter
+                    let jitter = Duration::from_millis(
+                        (task_uid % (jitter_range as u64 * 2)).saturating_sub(jitter_range as u64)
+                    );
+                    delay = next_delay.saturating_add(jitter);
+                }
+            }
+        }
+        
+        let error_msg = format!("Task {} timed out after {} attempts (max delay: {:?})", 
+                               task_uid, max_attempts, max_delay);
+        trace!("{}", error_msg);
+        Err(SearchError::Internal(error_msg))
+    }
