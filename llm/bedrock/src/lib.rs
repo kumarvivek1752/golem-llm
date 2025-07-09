@@ -1,5 +1,4 @@
-use std::{cell::RefCell, sync::Arc};
-
+use async_utils::get_async_runtime;
 use client::Bedrock;
 use golem_llm::{
     durability::{DurableLLM, ExtendedGuest},
@@ -13,6 +12,7 @@ mod async_utils;
 mod client;
 mod conversions;
 mod stream;
+mod wasi_client;
 
 struct BedrockComponent;
 
@@ -22,12 +22,16 @@ impl Guest for BedrockComponent {
     fn send(messages: Vec<Message>, config: Config) -> ChatEvent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
-        let bedrock = get_bedrock_client();
+        let runtime = get_async_runtime();
 
-        match bedrock {
-            Ok(client) => client.converse(messages, config, None),
-            Err(err) => ChatEvent::Error(err),
-        }
+        runtime.block_on(|reactor| async {
+            let bedrock = get_bedrock_client(reactor).await;
+
+            match bedrock {
+                Ok(client) => client.converse(messages, config, None).await,
+                Err(err) => ChatEvent::Error(err),
+            }
+        })
     }
 
     fn continue_(
@@ -37,12 +41,16 @@ impl Guest for BedrockComponent {
     ) -> ChatEvent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
-        let bedrock = get_bedrock_client();
+        let runtime = get_async_runtime();
 
-        match bedrock {
-            Ok(client) => client.converse(messages, config, Some(tool_results)),
-            Err(err) => ChatEvent::Error(err),
-        }
+        runtime.block_on(|reactor| async {
+            let bedrock = get_bedrock_client(reactor).await;
+
+            match bedrock {
+                Ok(client) => client.converse(messages, config, Some(tool_results)).await,
+                Err(err) => ChatEvent::Error(err),
+            }
+        })
     }
 
     fn stream(messages: Vec<Message>, config: Config) -> ChatStream {
@@ -57,12 +65,16 @@ impl ExtendedGuest for BedrockComponent {
     ) -> Self::ChatStream {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
-        let bedrock = get_bedrock_client();
+        let runtime = get_async_runtime();
 
-        match bedrock {
-            Ok(client) => client.converse_stream(messages, config),
-            Err(err) => BedrockChatStream::failed(err),
-        }
+        runtime.block_on(|reactor| async {
+            let bedrock = get_bedrock_client(reactor).await;
+
+            match bedrock {
+                Ok(client) => client.converse_stream(messages, config).await,
+                Err(err) => BedrockChatStream::failed(err),
+            }
+        })
     }
 
     fn retry_prompt(
@@ -123,19 +135,8 @@ impl ExtendedGuest for BedrockComponent {
     }
 }
 
-fn get_bedrock_client() -> Result<Arc<Bedrock>, llm::Error> {
-    BEDROCK_CLIENT.with_borrow_mut(|client_opt| match client_opt {
-        Some(client) => Ok(client.clone()),
-        None => {
-            let client = Arc::new(Bedrock::new()?);
-            *client_opt = Some(client.clone());
-            Ok(client)
-        }
-    })
-}
-
-thread_local! {
-    static BEDROCK_CLIENT: RefCell<Option<Arc<Bedrock>>> = const { RefCell::new(None) };
+async fn get_bedrock_client(reactor: wasi_async_runtime::Reactor) -> Result<Bedrock, llm::Error> {
+    Bedrock::new(reactor).await
 }
 
 type DurableBedrockComponent = DurableLLM<BedrockComponent>;

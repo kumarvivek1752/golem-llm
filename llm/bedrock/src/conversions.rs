@@ -14,6 +14,8 @@ use aws_sdk_bedrockruntime::{
 };
 use golem_llm::golem::llm::llm;
 
+use crate::async_utils::get_async_runtime;
+
 #[derive(Debug)]
 pub struct BedrockInput {
     pub model_id: String,
@@ -225,34 +227,39 @@ fn get_image_content_block_from_url(url: &str) -> Result<bedrock::types::Content
 }
 
 fn get_bytes_from_url(url: &str) -> Result<Vec<u8>, llm::Error> {
-    let client = reqwest::Client::builder()
-        .build()
-        .expect("Failed to initialize HTTP client");
+    let runtime = get_async_runtime();
 
-    let response = client.get(url).send().map_err(|err| {
-        custom_error(
-            llm::ErrorCode::InvalidRequest,
-            format!("Could not read image bytes from url: {url}, cause: {err}"),
-        )
-    })?;
-    if !response.status().is_success() {
-        return Err(custom_error(
-            llm::ErrorCode::InvalidRequest,
-            format!(
-                "Could not read image bytes from url: {url}, cause: request failed with status: {}",
-                response.status()
-            ),
-        ));
-    }
+    runtime.block_on(|reactor| async {
+        let client = reqwest::Client::builder(reactor)
+            .build()
+            .expect("Failed to initialize HTTP client");
+    
+        let response = client.get(url).send().await.map_err(|err| {
+            custom_error(
+                llm::ErrorCode::InvalidRequest,
+                format!("Could not read image bytes from url: {url}, cause: {err}"),
+            )
+        })?;
+        if !response.status().is_success() {
+            return Err(custom_error(
+                llm::ErrorCode::InvalidRequest,
+                format!(
+                    "Could not read image bytes from url: {url}, cause: request failed with status: {}",
+                    response.status()
+                ),
+            ));
+        }
+    
+        let bytes = response.bytes().await.map_err(|err| {
+            custom_error(
+                llm::ErrorCode::InvalidRequest,
+                format!("Could not read image bytes from url: {url}, cause: {err}"),
+            )
+        })?;
+    
+        Ok(bytes.to_vec())
 
-    let bytes = response.bytes().map_err(|err| {
-        custom_error(
-            llm::ErrorCode::InvalidRequest,
-            format!("Could not read image bytes from url: {url}, cause: {err}"),
-        )
-    })?;
-
-    Ok(bytes.to_vec())
+    })
 }
 
 fn str_to_bedrock_mime_type(mime_type: &str) -> Result<ImageFormat, llm::Error> {
