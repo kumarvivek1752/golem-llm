@@ -914,6 +914,7 @@ dependencies = [
  "reqwest 0.12.15 (git+https://github.com/golemcloud/reqwest?branch=update-july-2025)",
  "serde",
  "serde_json",
+ "wasi 0.12.1+wasi-0.2.0",
  "wasi-async-runtime",
  "wit-bindgen-rt 0.40.0",
 ]

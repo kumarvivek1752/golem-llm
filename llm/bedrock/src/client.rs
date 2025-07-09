@@ -18,8 +18,8 @@ use golem_llm::{
     config::{get_config_key, get_config_key_or_none},
     golem::llm::llm,
 };
-use golem_rust::bindings::wasi::clocks::monotonic_clock;
 use log::trace;
+use wasi::clocks::monotonic_clock;
 
 #[derive(Debug)]
 pub struct Bedrock {
@@ -185,10 +185,7 @@ impl AsyncSleep for WasiSleep {
             let nanos = duration.as_nanos() as u64;
             let pollable = monotonic_clock::subscribe_duration(nanos);
 
-            reactor
-                .clone()
-                .wait_for(unsafe { std::mem::transmute(pollable) })
-                .await;
+            reactor.clone().wait_for(pollable).await;
         };
         Sleep::new(Box::pin(UnsafeFuture::new(fut)))
     }
