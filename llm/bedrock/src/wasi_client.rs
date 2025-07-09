@@ -122,7 +122,7 @@ impl HttpConnector for SharedWasiConnector {
             let mut headers = Headers::new();
             for header in headers_map {
                 if let Some(key) = header.0 {
-                    if let Some(value) = header.1.to_str().ok() {
+                    if let Ok(value) = header.1.to_str() {
                         headers.insert(key.to_string(), value.to_string());
                     }
                 }

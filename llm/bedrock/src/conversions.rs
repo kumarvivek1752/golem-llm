@@ -233,7 +233,7 @@ fn get_bytes_from_url(url: &str) -> Result<Vec<u8>, llm::Error> {
         let client = reqwest::Client::builder(reactor)
             .build()
             .expect("Failed to initialize HTTP client");
-    
+
         let response = client.get(url).send().await.map_err(|err| {
             custom_error(
                 llm::ErrorCode::InvalidRequest,
@@ -249,14 +249,14 @@ fn get_bytes_from_url(url: &str) -> Result<Vec<u8>, llm::Error> {
                 ),
             ));
         }
-    
+
         let bytes = response.bytes().await.map_err(|err| {
             custom_error(
                 llm::ErrorCode::InvalidRequest,
                 format!("Could not read image bytes from url: {url}, cause: {err}"),
             )
         })?;
-    
+
         Ok(bytes.to_vec())
 
     })

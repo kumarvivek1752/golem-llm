@@ -177,6 +177,7 @@ impl WasiSleep {
 }
 
 impl AsyncSleep for WasiSleep {
+    #[allow(clippy::missing_transmute_annotations)]
     fn sleep(&self, duration: std::time::Duration) -> Sleep {
         let reactor = self.reactor.clone();
 
