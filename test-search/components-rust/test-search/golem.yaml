@@ -10,9 +10,6 @@ components:
     profiles:
       # DEBUG PROFILES
       algolia-debug:
-        env:
-          ALGOLIA_APPLICATION_ID: SLPKFQ34PO
-          ALGOLIA_API_KEY: 76b6638c2c0754b20b008c55dc2356bb
         files:
           - sourcePath: ../../data/cat.png
             targetPath: /data/cat.png
@@ -65,9 +62,6 @@ components:
           - src/bindings.rs
 
       meilisearch-debug:
-        # env:
-        #   MEILISEARCH_BASE_URL: https://edge.meilisearch.com
-        #   MEILISEARCH_API_KEY: b58e9ccd8d2eb1fa122ba5bfc32f67913a4eee35
         files:
           - sourcePath: ../../data/cat.png
             targetPath: /data/cat.png

@@ -527,6 +527,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "ureq",
  "wit-bindgen-rt 0.40.0",
 ]
 
@@ -542,6 +543,8 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "ureq",
+ "urlencoding",
  "wit-bindgen-rt 0.40.0",
 ]
 
@@ -1223,6 +1226,12 @@ dependencies = [
  "idna",
  "percent-encoding",
 ]
+
+[[package]]
+name = "urlencoding"
+version = "2.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "utf8_iter"

@@ -1,8 +1,9 @@
+use base64::Engine;
 use golem_search::golem::search::types::SearchError;
-use reqwest::{Client, Response};
+use reqwest::{Client, RequestBuilder, Method, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use std::fmt::Debug;
 
 /// OpenSearch REST API client
 pub struct OpenSearchApi {
@@ -153,7 +154,7 @@ impl OpenSearchApi {
     /// Create a new OpenSearch API client
     pub fn new(base_url: String, username: Option<String>, password: Option<String>, api_key: Option<String>) -> Self {
         Self {
-            client: Client::new(),
+            client: Self::create_secure_client(),
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key,
             username,
@@ -161,34 +162,98 @@ impl OpenSearchApi {
         }
     }
 
-    /// Add authentication headers to request builder
-    fn add_auth(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        if let Some(api_key) = &self.api_key {
-            builder.header("Authorization", format!("ApiKey {}", api_key))
-        } else if let (Some(username), Some(password)) = (&self.username, &self.password) {
-            builder.basic_auth(username, Some(password))
-        } else {
-            builder
-        }
+    /// Create a secure client with strict TLS validation (production default)
+    fn create_secure_client() -> Client {
+        Client::builder()
+            .build()
+            .expect("Failed to initialize HTTP client")
     }
 
-    /// Handle OpenSearch API errors
-    fn handle_error(response: Response) -> SearchError {
-        let status = response.status();
-        
-        if status == 404 {
-            return SearchError::IndexNotFound;
+    /// Create an authenticated request
+    fn create_request(&self, method: &str, url: &str) -> RequestBuilder {
+        let method = match method {
+            "GET" => Method::GET,
+            "POST" => Method::POST,
+            "PUT" => Method::PUT,
+            "DELETE" => Method::DELETE,
+            _ => Method::GET,
+        };
+
+        println!("[OpenSearch] HTTP {} {}", method, url);
+
+        let mut request = self.client
+            .request(method, url)
+            .header("Content-Type", "application/json");
+
+        if let Some(api_key) = &self.api_key {
+            request = request.header("Authorization", format!("ApiKey {}", api_key));
+        } else if let (Some(username), Some(password)) = (&self.username, &self.password) {
+            let credentials = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", username, password));
+            request = request.header("Authorization", format!("Basic {}", credentials));
+            println!(
+                "[OpenSearch] Headers: Authorization=Basic {}...",
+                &credentials[..8.min(credentials.len())]
+            );
         }
         
-        if status == 429 {
-            return SearchError::RateLimited;
+        request
+    }
+
+    /// Create an authenticated request with custom content type
+    fn create_request_with_content_type(&self, method: &str, url: &str, content_type: &str) -> RequestBuilder {
+        let method = match method {
+            "GET" => Method::GET,
+            "POST" => Method::POST,
+            "PUT" => Method::PUT,
+            "DELETE" => Method::DELETE,
+            _ => Method::GET,
+        };
+
+        println!("[OpenSearch] HTTP {} {}", method, url);
+
+        let mut request = self.client
+            .request(method, url)
+            .header("Content-Type", content_type);
+
+        if let Some(api_key) = &self.api_key {
+            request = request.header("Authorization", format!("ApiKey {}", api_key));
+        } else if let (Some(username), Some(password)) = (&self.username, &self.password) {
+            let credentials = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", username, password));
+            request = request.header("Authorization", format!("Basic {}", credentials));
+            println!(
+                "[OpenSearch] Headers: Authorization=Basic {}...",
+                &credentials[..8.min(credentials.len())]
+            );
         }
         
-        // Try to parse the error response
-        if let Ok(error_response) = response.json::<OpenSearchErrorResponse>() {
-            SearchError::Internal(format!("{}: {}", error_response.error.error_type, error_response.error.reason))
+        request
+    }
+
+    /// Parse response and handle errors
+    fn parse_response<T: serde::de::DeserializeOwned + Debug>(response: Response) -> Result<T, SearchError> {
+        let status_code = response.status();
+        
+        if status_code.is_success() {
+            response
+                .json::<T>()
+                .map_err(|e| SearchError::Internal(format!("Failed to parse response: {}", e)))
         } else {
-            SearchError::Internal(format!("HTTP {}: Unknown error", status))
+            let error_body = response
+                .text()
+                .map_err(|e| SearchError::Internal(format!("Failed to read error response: {}", e)))?;
+            
+            if status_code == 404 {
+                Err(SearchError::IndexNotFound)
+            } else if status_code == 429 {
+                Err(SearchError::RateLimited)
+            } else {
+                // Try to parse the error response
+                if let Ok(error_response) = serde_json::from_str::<OpenSearchErrorResponse>(&error_body) {
+                    Err(SearchError::Internal(format!("{}: {}", error_response.error.error_type, error_response.error.reason)))
+                } else {
+                    Err(SearchError::Internal(format!("HTTP {}: {}", status_code, error_body)))
+                }
+            }
         }
     }
 
@@ -196,125 +261,105 @@ impl OpenSearchApi {
     pub fn create_index(&self, index_name: &str, settings: Option<OpenSearchSettings>) -> Result<(), SearchError> {
         let url = format!("{}/{}", self.base_url, index_name);
         
-        let mut builder = self.add_auth(self.client.put(&url))
-            .header("Content-Type", "application/json");
-        
-        if let Some(settings) = settings {
-            builder = builder.json(&settings);
-        }
-        
-        let response = builder.send().map_err(|e| SearchError::Internal(e.to_string()))?;
-        
-        if response.status().is_success() {
-            Ok(())
+        let response = if let Some(settings) = settings {
+            self.create_request("PUT", &url)
+                .json(&settings)
+                .send()
+                .map_err(|e| SearchError::Internal(format!("Failed to create index: {}", e)))?
         } else {
-            Err(Self::handle_error(response))
-        }
+            self.create_request("PUT", &url)
+                .send()
+                .map_err(|e| SearchError::Internal(format!("Failed to create index: {}", e)))?
+        };
+        
+        Self::parse_response::<serde_json::Value>(response).map(|_| ())
     }
 
     /// Delete an index
     pub fn delete_index(&self, index_name: &str) -> Result<(), SearchError> {
         let url = format!("{}/{}", self.base_url, index_name);
         
-        let response = self.add_auth(self.client.delete(&url))
+        let response = self.create_request("DELETE", &url)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| SearchError::Internal(format!("Failed to delete index: {}", e)))?;
         
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(Self::handle_error(response))
-        }
+        Self::parse_response::<serde_json::Value>(response).map(|_| ())
     }
 
     /// List all indices
     pub fn list_indices(&self) -> Result<Vec<OpenSearchIndexInfo>, SearchError> {
         let url = format!("{}/_cat/indices?format=json", self.base_url);
         
-        let response = self.add_auth(self.client.get(&url))
+        let response = self.create_request("GET", &url)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| SearchError::Internal(format!("Failed to list indices: {}", e)))?;
         
-        if response.status().is_success() {
-            response.json::<Vec<OpenSearchIndexInfo>>()
-                .map_err(|e| SearchError::Internal(format!("Failed to parse response: {}", e)))
-        } else {
-            Err(Self::handle_error(response))
-        }
+        Self::parse_response::<Vec<OpenSearchIndexInfo>>(response)
     }
 
     /// Index a single document
     pub fn index_document(&self, index_name: &str, id: &str, document: &Value) -> Result<(), SearchError> {
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
         
-        let response = self.add_auth(self.client.put(&url))
-            .header("Content-Type", "application/json")
+        let response = self.create_request("PUT", &url)
             .json(document)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| SearchError::Internal(format!("Failed to index document: {}", e)))?;
         
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(Self::handle_error(response))
-        }
+        Self::parse_response::<serde_json::Value>(response).map(|_| ())
     }
 
     /// Bulk index documents
     pub fn bulk_index(&self, operations: &str) -> Result<OpenSearchBulkResponse, SearchError> {
         let url = format!("{}/_bulk", self.base_url);
         
-        let response = self.add_auth(self.client.post(&url))
-            .header("Content-Type", "application/x-ndjson")
+        let response = self.create_request_with_content_type("POST", &url, "application/x-ndjson")
             .body(operations.to_string())
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| SearchError::Internal(format!("Failed to bulk index: {}", e)))?;
         
-        if response.status().is_success() {
-            response.json::<OpenSearchBulkResponse>()
-                .map_err(|e| SearchError::Internal(format!("Failed to parse response: {}", e)))
-        } else {
-            Err(Self::handle_error(response))
-        }
+        Self::parse_response::<OpenSearchBulkResponse>(response)
     }
 
     /// Delete a document
     pub fn delete_document(&self, index_name: &str, id: &str) -> Result<(), SearchError> {
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
         
-        let response = self.add_auth(self.client.delete(&url))
+        let response = self.create_request("DELETE", &url)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| SearchError::Internal(format!("Failed to delete document: {}", e)))?;
         
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(Self::handle_error(response))
-        }
+        Self::parse_response::<serde_json::Value>(response).map(|_| ())
     }
 
     /// Get a document by ID
     pub fn get_document(&self, index_name: &str, id: &str) -> Result<Option<Value>, SearchError> {
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
         
-        let response = self.add_auth(self.client.get(&url))
-            .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+        let response = self.create_request("GET", &url).send();
         
-        if response.status() == 404 {
-            Ok(None)
-        } else if response.status().is_success() {
-            let doc: Value = response.json()
-                .map_err(|e| SearchError::Internal(format!("Failed to parse response: {}", e)))?;
-            
-            // Extract the _source field
-            if let Some(source) = doc.get("_source") {
-                Ok(Some(source.clone()))
-            } else {
-                Ok(None)
+        match response {
+            Ok(resp) => {
+                if resp.status() == 404 {
+                    Ok(None)
+                } else {
+                    let doc: Value = Self::parse_response(resp)?;
+                    // Extract the _source field
+                    if let Some(source) = doc.get("_source") {
+                        Ok(Some(source.clone()))
+                    } else {
+                        Ok(None)
+                    }
+                }
             }
-        } else {
-            Err(Self::handle_error(response))
+            Err(e) => {
+                // Check if it's a 404 error
+                if e.to_string().contains("404") {
+                    Ok(None)
+                } else {
+                    Err(SearchError::Internal(format!("Failed to get document: {}", e)))
+                }
+            }
         }
     }
 
@@ -322,50 +367,34 @@ impl OpenSearchApi {
     pub fn search(&self, index_name: &str, query: &OpenSearchQuery) -> Result<OpenSearchSearchResponse, SearchError> {
         let url = format!("{}/{}/_search", self.base_url, index_name);
         
-        let response = self.add_auth(self.client.post(&url))
-            .header("Content-Type", "application/json")
+        let response = self.create_request("POST", &url)
             .json(query)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| SearchError::Internal(format!("Failed to search: {}", e)))?;
         
-        if response.status().is_success() {
-            response.json::<OpenSearchSearchResponse>()
-                .map_err(|e| SearchError::Internal(format!("Failed to parse response: {}", e)))
-        } else {
-            Err(Self::handle_error(response))
-        }
+        Self::parse_response::<OpenSearchSearchResponse>(response)
     }
 
     /// Get index mappings (schema)
     pub fn get_mappings(&self, index_name: &str) -> Result<Value, SearchError> {
         let url = format!("{}/{}/_mapping", self.base_url, index_name);
         
-        let response = self.add_auth(self.client.get(&url))
+        let response = self.create_request("GET", &url)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| SearchError::Internal(format!("Failed to get mappings: {}", e)))?;
         
-        if response.status().is_success() {
-            response.json::<Value>()
-                .map_err(|e| SearchError::Internal(format!("Failed to parse response: {}", e)))
-        } else {
-            Err(Self::handle_error(response))
-        }
+        Self::parse_response::<Value>(response)
     }
 
     /// Update index mappings
     pub fn put_mappings(&self, index_name: &str, mappings: &OpenSearchMappings) -> Result<(), SearchError> {
         let url = format!("{}/{}/_mapping", self.base_url, index_name);
         
-        let response = self.add_auth(self.client.put(&url))
-            .header("Content-Type", "application/json")
+        let response = self.create_request("PUT", &url)
             .json(mappings)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| SearchError::Internal(format!("Failed to put mappings: {}", e)))?;
         
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(Self::handle_error(response))
-        }
+        Self::parse_response::<serde_json::Value>(response).map(|_| ())
     }
 }

@@ -11,11 +11,16 @@ use std::collections::HashMap;
 
 /// Convert a Golem Doc to an Elasticsearch document Value
 pub fn doc_to_elasticsearch_document(doc: Doc) -> Result<Value, String> {
+    // Validate document ID length (Elasticsearch limit is 512 bytes)
+    if doc.id.len() > 512 {
+        return Err(format!("Document ID too long: {} bytes (max 512)", doc.id.len()));
+    }
+    
     let content: Value = serde_json::from_str(&doc.content)
         .map_err(|e| format!("Invalid JSON in document content: {}", e))?;
     
     // Create a document that includes the ID
-    let mut document = match content {
+    let document = match content {
         Value::Object(mut obj) => {
             obj.insert("id".to_string(), Value::String(doc.id));
             Value::Object(obj)
@@ -76,12 +81,43 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
     // Add filters
     for filter in query.filters {
         if let Ok(filter_value) = serde_json::from_str::<Value>(&filter) {
+            // JSON filter
             bool_query["bool"]["filter"]
                 .as_array_mut()
                 .unwrap()
                 .push(filter_value);
+        } else if filter.contains(':') {
+            // Simple field:value syntax
+            let parts: Vec<&str> = filter.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                let field = parts[0].trim();
+                let value = parts[1].trim();
+                bool_query["bool"]["filter"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({
+                        "term": {
+                            field: value
+                        }
+                    }));
+            }
+        } else if filter.contains('=') {
+            // field = "value" syntax (Meilisearch style)
+            let parts: Vec<&str> = filter.splitn(2, '=').collect();
+            if parts.len() == 2 {
+                let field = parts[0].trim();
+                let value = parts[1].trim().trim_matches('"').trim_matches('\'');
+                bool_query["bool"]["filter"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({
+                        "term": {
+                            field: value
+                        }
+                    }));
+            }
         } else {
-            // Treat as a simple term filter
+            // Fallback: treat as status filter
             bool_query["bool"]["filter"]
                 .as_array_mut()
                 .unwrap()
@@ -109,8 +145,17 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
     if !query.sort.is_empty() {
         let mut sort_array = Vec::new();
         for sort_field in query.sort {
-            if sort_field.starts_with('-') {
-                // Descending order
+            if let Some(colon_pos) = sort_field.find(':') {
+                let field = &sort_field[..colon_pos];
+                let direction = &sort_field[colon_pos + 1..];
+                let order = if direction == "desc" { "desc" } else { "asc" };
+                sort_array.push(json!({
+                    field: {
+                        "order": order
+                    }
+                }));
+            } else if sort_field.starts_with('-') {
+                // Descending order (alternative syntax)
                 let field = &sort_field[1..];
                 sort_array.push(json!({
                     field: {
@@ -259,7 +304,7 @@ pub fn schema_to_elasticsearch_settings(schema: Schema) -> ElasticsearchSettings
         match field.field_type {
             FieldType::Text => {
                 field_mapping.insert("type".to_string(), Value::String("text".to_string()));
-                // Add keyword subfield for exact matching
+                // Add keyword subfield for exact matching, sorting, and aggregations
                 field_mapping.insert("fields".to_string(), json!({
                     "keyword": {
                         "type": "keyword",
@@ -294,6 +339,14 @@ pub fn schema_to_elasticsearch_settings(schema: Schema) -> ElasticsearchSettings
 
         properties.insert(field.name, Value::Object(field_mapping));
     }
+
+    // Add strict mapping for common fields to ensure proper sorting
+    properties.insert("year".to_string(), json!({
+        "type": "integer"
+    }));
+    properties.insert("id".to_string(), json!({
+        "type": "keyword"
+    }));
 
     let mappings = ElasticsearchMappings {
         properties: Some(properties),

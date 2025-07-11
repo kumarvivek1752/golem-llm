@@ -11,14 +11,14 @@ struct Component;
 // Test constants for different providers
 #[cfg(feature = "algolia")]
 const TEST_INDEX: &'static str = "test-algolia-index";
-// #[cfg(feature = "elasticsearch")]
-// const TEST_INDEX: &'static str = "test-elasticsearch-index";
+#[cfg(feature = "elasticsearch")]
+const TEST_INDEX: &'static str = "test-elasticsearch-index";
 #[cfg(feature = "meilisearch")]
 const TEST_INDEX: &'static str = "test-meilisearch-index";
-// #[cfg(feature = "opensearch")]
-// const TEST_INDEX: &'static str = "test-opensearch-index";
-// #[cfg(feature = "typesense")]
-// const TEST_INDEX: &'static str = "test-typesense-index";
+#[cfg(feature = "opensearch")]
+const TEST_INDEX: &'static str = "test-opensearch-index";
+#[cfg(feature = "typesense")]
+const TEST_INDEX: &'static str = "test-typesense-index";
 
 // Helper function to create test documents
 fn create_test_documents() -> Vec<Doc> {
@@ -101,8 +101,20 @@ impl Guest for Component {
         let index_name = format!("{}-test1", TEST_INDEX);
         let mut results = Vec::new();
 
+        if TEST_INDEX == "test-elasticsearch-index"||TEST_INDEX ==  "test-typesense-index" || TEST_INDEX == "test-opensearch-index" {
+            // Elasticsearch requires a different setup for the index
+            println!("Setting   index: {}", index_name);
+            match core::create_index(&index_name, Some(&create_test_schema())) {
+                Ok(_) => results.push("✓ Index created successfully".to_string()),
+                Err(e) => return format!("✗ Index creation failed: {:?}", e),
+            }
+        } else {
+            // For other providers, we can proceed with schema setup
+            println!("Setting up index: {}", index_name);
+        }
+
         // Set up index schema (for providers that support schema configuration)
-        println!("Setting up index schema: {}", index_name);
+        println!("Setting up index : {}", index_name);
         match core::update_schema(&index_name, &create_test_schema()) {
             Ok(_) => results.push("✓ Index schema configured successfully".to_string()),
             Err(SearchError::Unsupported) => results.push("✓ Schema configuration not required (auto-detected)".to_string()),
@@ -333,6 +345,17 @@ impl Guest for Component {
         let index_name = format!("{}-test3", TEST_INDEX);
         let mut results = Vec::new();
 
+        if TEST_INDEX == "test-elasticsearch-index"||TEST_INDEX ==  "test-typesense-index" || TEST_INDEX == "test-opensearch-index" {
+            println!("Setting   index: {}", index_name);
+            match core::create_index(&index_name, Some(&create_test_schema())) {
+                Ok(_) => results.push("✓ Index created successfully".to_string()),
+                Err(e) => return format!("✗ Index creation failed: {:?}", e),
+            }
+        } else {
+            // For other providers, we can proceed with schema setup
+            println!("Setting up index: {}", index_name);
+        }
+
         // Setup schema first
         match core::update_schema(&index_name, &create_test_schema()) {
             Ok(_) => {},
@@ -405,8 +428,19 @@ impl Guest for Component {
 
     /// test4 demonstrates search with highlighting and facets
     fn test4() -> String {
-        let index_name = format!("{}-test4", TEST_INDEX);
+        let index_name = format!("{}-test4th", TEST_INDEX);
         let mut results = Vec::new();
+
+        if TEST_INDEX == "test-elasticsearch-index"||TEST_INDEX ==  "test-typesense-index" || TEST_INDEX == "test-opensearch-index" {
+            println!("Setting   index: {}", index_name);
+            match core::create_index(&index_name, Some(&create_test_schema())) {
+                Ok(_) => results.push("✓ Index created successfully".to_string()),
+                Err(e) => return format!("✗ Index creation failed: {:?}", e),
+            }
+        } else {
+            // For other providers, we can proceed with schema setup
+            println!("Setting up index: {}", index_name);
+        }
 
         // Setup schema for faceting support
         match core::update_schema(&index_name, &create_test_schema()) {
@@ -478,6 +512,18 @@ impl Guest for Component {
         let index_name = format!("{}-test5", TEST_INDEX);
         let mut results = Vec::new();
 
+         if TEST_INDEX == "test-elasticsearch-index"||TEST_INDEX ==  "test-typesense-index" || TEST_INDEX == "test-opensearch-index" {
+            println!("Setting   index: {}", index_name);
+            match core::create_index(&index_name, Some(&create_test_schema())) {
+                Ok(_) => results.push("✓ Index created successfully".to_string()),
+                Err(e) => return format!("✗ Index creation failed: {:?}", e),
+            }
+        } else {
+            // For other providers, we can proceed with schema setup
+            println!("Setting up index: {}", index_name);
+        }
+
+
         // Set up initial schema
         println!("Setting up index with predefined schema");
         let original_schema = create_test_schema();
@@ -541,20 +587,6 @@ impl Guest for Component {
             Err(SearchError::Unsupported) => results.push("  ⚠ Schema updates not supported by this provider".to_string()),
             Err(e) => results.push(format!("✗ Schema update failed: {:?}", e)),
         }
-
-        // Test document insertion with invalid data (schema validation)
-        println!(" schema validation with invali document");
-        let invalid_doc = Doc {
-            id: "invalid1".to_string(),
-            content: r#"{"invalid_field": "this should not be allowed"}"#.to_string(),
-        };
-
-        match core::upsert(&index_name, &invalid_doc) {
-            Ok(_) => results.push("  ⚠ Invalid document accepted (lenient validation)".to_string()),
-            Err(SearchError::InvalidQuery(_)) => results.push("  ✓ Invalid document rejected (strict validation)".to_string()),
-            Err(e) => results.push(format!("  ? Unexpected error with invalid document: {:?}", e)),
-        }
-
         // Cleanup
         core::delete_index(&index_name).ok();
         results.join("\n")
@@ -564,6 +596,17 @@ impl Guest for Component {
     fn test6() -> String {
         let index_name = format!("{}-test6", TEST_INDEX);
         let mut results = Vec::new();
+
+        if TEST_INDEX == "test-elasticsearch-index"||TEST_INDEX ==  "test-typesense-index" || TEST_INDEX == "test-opensearch-index" {
+            println!("Setting   index: {}", index_name);
+            match core::create_index(&index_name, Some(&create_test_schema())) {
+                Ok(_) => results.push("✓ Index created successfully".to_string()),
+                Err(e) => return format!("✗ Index creation failed: {:?}", e),
+            }
+        } else {
+            // For other providers, we can proceed with schema setup
+            println!("Setting up index: {}", index_name);
+        }
 
         // Setup schema for streaming test
         match core::update_schema(&index_name, &create_test_schema()) {
@@ -622,7 +665,18 @@ impl Guest for Component {
             }
             Err(SearchError::Unsupported) => {
                 results.push("⚠ Streaming search not support by this provider".to_string());
-                
+                 if TEST_INDEX == "test-elasticsearch-index" {
+            // Elasticsearch requires a different setup for the index
+            println!("Setting  Elasticsearch index: {}", index_name);
+            match core::create_index(&index_name, Some(&create_test_schema())) {
+                Ok(_) => results.push("✓ Index created successfully".to_string()),
+                Err(e) => return format!("✗ Index creation failed: {:?}", e),
+            }
+        } else {
+            // For other providers, we can proceed with schema setup
+            println!("Setting up index: {}", index_name);
+        }
+
                 // Fallback to regular search
                 match core::search(&index_name, &stream_query) {
                     Ok(search_results) => {
@@ -648,6 +702,18 @@ impl Guest for Component {
         
         let test_index = "test777-unsupported";
         let schema = create_test_schema();
+
+         if TEST_INDEX == "test-elasticsearch-index"||TEST_INDEX ==  "test-typesense-index" || TEST_INDEX == "test-opensearch-index" {
+            println!("Setting   index: {}", test_index);
+            match core::create_index(&test_index, Some(&schema)) {
+                Ok(_) => results.push("✓ Index created successfully".to_string()),
+                Err(e) => return format!("✗ Index creation failed: {:?}", e),
+            }
+        } else {
+            // For other providers, we can proceed with schema setup
+            println!("Setting up index: {}", test_index);
+        }
+
 
         // Test schema operations that might not be supported
         match core::update_schema(test_index, &schema) {

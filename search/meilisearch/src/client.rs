@@ -6,6 +6,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, Map as JsonMap};
 use std::fmt::Debug;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct MeilisearchApi {
@@ -469,26 +470,67 @@ impl MeilisearchApi {
     /// - Maximum attempts configurable (default 30, allowing up to ~2.5 minutes of waiting)
     /// - Jitter to prevent thundering herd effects
     /// - Detailed logging for debugging
-   
-
+    /// - Enhanced error handling with task error details
     pub fn wait_for_task(&self, task_uid: u64) -> Result<(), SearchError> {
-        trace!("Waiting for task: {}", task_uid);
+        self.wait_for_task_with_config(task_uid, 30, Duration::from_millis(100), Duration::from_secs(5))
+    }
+
+    /// Production-level wait_for_task with configurable parameters
+    pub fn wait_for_task_with_config(
+        &self, 
+        task_uid: u64, 
+        max_attempts: u32,
+        initial_delay: Duration,
+        max_delay: Duration
+    ) -> Result<(), SearchError> {
+        trace!("Waiting for task {} with exponential backoff (max_attempts: {}, initial_delay: {:?}, max_delay: {:?})", 
+               task_uid, max_attempts, initial_delay, max_delay);
         
-        // Simple polling mechanism - in production you might want exponential backoff
-        for _ in 0..30 {
+        let mut delay = initial_delay;
+        
+        for attempt in 1..=max_attempts {
             let task = self.get_task(task_uid)?;
+            trace!("Task {} attempt {}/{}: status = {}", task_uid, attempt, max_attempts, task.status);
+            
             match task.status.as_str() {
-                "succeeded" => return Ok(()),
-                "failed" => return Err(SearchError::Internal(format!("Task {} failed", task_uid))),
-                "canceled" => return Err(SearchError::Internal(format!("Task {} was canceled", task_uid))),
-                _ => {
-                    // Sleep for 1 second - this is a simple blocking wait
-                    // In a real implementation, you might want to use async/await
-                    std::thread::sleep(std::time::Duration::from_secs(1));
+                "succeeded" => {
+                    trace!("Task {} completed successfully after {} attempts", task_uid, attempt);
+                    return Ok(());
+                },
+                "failed" => {
+                    let error_msg = format!("Task {} failed after {} attempts", task_uid, attempt);
+                    trace!("{}", error_msg);
+                    return Err(SearchError::Internal(error_msg));
+                },
+                "canceled" => {
+                    let error_msg = format!("Task {} was canceled after {} attempts", task_uid, attempt);
+                    trace!("{}", error_msg);
+                    return Err(SearchError::Internal(error_msg));
+                },
+                status => {
+                    trace!("Task {} is still {}, waiting {:?} before retry {}/{}", 
+                           task_uid, status, delay, attempt, max_attempts);
+                    
+                    // Sleep for the current delay
+                    std::thread::sleep(delay);
+                    
+                    // Calculate next delay with exponential backoff and jitter
+                    let next_delay = std::cmp::min(delay * 2, max_delay);
+                    
+                    // Add jitter (10% random variation) to prevent thundering herd
+                    let jitter_range = next_delay.as_millis() / 10; // 10% jitter
+                    let jitter = Duration::from_millis(
+                        (task_uid % (jitter_range as u64 * 2)).saturating_sub(jitter_range as u64)
+                    );
+                    delay = next_delay.saturating_add(jitter);
                 }
             }
         }
-        Err(SearchError::Internal(format!("Task {} timed out", task_uid)))
+        
+        let error_msg = format!("Task {} timed out after {} attempts (max delay: {:?})", 
+                               task_uid, max_attempts, max_delay);
+        trace!("{}", error_msg);
+        Err(SearchError::Internal(error_msg))
     }
 }
 

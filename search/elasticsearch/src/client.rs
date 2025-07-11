@@ -254,6 +254,8 @@ impl ElasticsearchApi {
             .map_err(|e| SearchError::Internal(e.to_string()))?;
         
         if response.status().is_success() {
+            // Refresh the index to make the document immediately searchable
+            self.refresh_index(index_name)?;
             Ok(())
         } else {
             Err(Self::handle_error(response))
@@ -366,6 +368,22 @@ impl ElasticsearchApi {
             Ok(())
         } else {
             Err(Self::handle_error(response))
+        }
+    }
+
+    /// Refresh an index to make recent changes available for search
+    pub fn refresh_index(&self, index_name: &str) -> Result<(), SearchError> {
+        let url = format!("{}/{}/_refresh", self.base_url, index_name);
+        
+        let response = self.add_auth(self.client.post(&url))
+            .send()
+            .map_err(|e| SearchError::Internal(e.to_string()))?;
+        
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            // Don't fail the whole operation if refresh fails
+            Ok(())
         }
     }
 }

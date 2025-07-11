@@ -126,16 +126,22 @@ pub fn search_query_to_opensearch_request(query: SearchQuery) -> OpenSearchQuery
         let mut sort_array = Vec::new();
         for sort_field in query.sort {
             if sort_field.starts_with('-') {
-                // Descending order
+                // Descending order (format: -field)
                 let field = &sort_field[1..];
-                sort_array.push(serde_json::json!({
-                    field: { "order": "desc" }
-                }));
+                let mut sort_obj = Map::new();
+                sort_obj.insert(field.to_string(), serde_json::json!({ "order": "desc" }));
+                sort_array.push(Value::Object(sort_obj));
+            } else if let Some((field, order)) = sort_field.split_once(':') {
+                // Field:order format (e.g., "year:desc" or "title:asc")
+                let order = if order.to_lowercase() == "desc" { "desc" } else { "asc" };
+                let mut sort_obj = Map::new();
+                sort_obj.insert(field.to_string(), serde_json::json!({ "order": order }));
+                sort_array.push(Value::Object(sort_obj));
             } else {
-                // Ascending order
-                sort_array.push(serde_json::json!({
-                    sort_field: { "order": "asc" }
-                }));
+                // Ascending order (default)
+                let mut sort_obj = Map::new();
+                sort_obj.insert(sort_field, serde_json::json!({ "order": "asc" }));
+                sort_array.push(Value::Object(sort_obj));
             }
         }
         opensearch_query.sort = Some(sort_array);
@@ -175,9 +181,16 @@ pub fn search_query_to_opensearch_request(query: SearchQuery) -> OpenSearchQuery
     if !query.facets.is_empty() {
         let mut aggs = Map::new();
         for facet in query.facets {
+            // Use .keyword for text fields to enable aggregation
+            let field_name = if facet == "year" { 
+                facet.clone() // Numbers don't need .keyword
+            } else {
+                format!("{}.keyword", facet) // Text fields need .keyword for aggregation
+            };
+            
             aggs.insert(format!("{}_terms", facet), serde_json::json!({
                 "terms": {
-                    "field": facet,
+                    "field": field_name,
                     "size": 100
                 }
             }));

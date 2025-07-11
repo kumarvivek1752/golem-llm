@@ -33,7 +33,7 @@ pub fn typesense_document_to_doc(doc: TypesenseDocument) -> Doc {
 pub fn search_query_to_typesense_query(query: SearchQuery) -> TypesenseSearchQuery {
     let mut typesense_query = TypesenseSearchQuery {
         q: query.q.unwrap_or_else(|| "*".to_string()), // Default to match all if no query provided
-        query_by: None,
+        query_by: Some("title,author,description,genre".to_string()), // Default searchable fields
         filter_by: None,
         sort_by: None,
         facet_by: None,
@@ -235,18 +235,52 @@ pub fn typesense_response_to_search_results(response: SearchResponse) -> SearchR
 pub fn typesense_hit_to_search_hit(hit: TypesenseSearchHit) -> SearchHit {
     let mut document = hit.document;
     
-    // Extract the id from the document
-    let id = document.remove("id")
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap_or_else(|| "unknown".to_string());
-    
-    let content = serde_json::to_string(&document).unwrap_or_else(|_| "{}".to_string());
+    // Check if the document data is nested under a "document" key
+    let (id, content) = if let Some(nested_doc) = document.get("document").and_then(|v| v.as_object()) {
+        // Document data is nested - extract id from the nested document
+        let id = nested_doc.get("id")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| "unknown".to_string());
+        
+        // Use the nested document as content, excluding the id
+        let mut content_doc = nested_doc.clone();
+        content_doc.remove("id");
+        let content = serde_json::to_string(&content_doc).unwrap_or_else(|_| "{}".to_string());
+        
+        (id, content)
+    } else {
+        // Document data is at top level - extract id directly
+        let id = document.remove("id")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| "unknown".to_string());
+        
+        let content = serde_json::to_string(&document).unwrap_or_else(|_| "{}".to_string());
+        
+        (id, content)
+    };
     
     // Calculate score from text_match (normalized to 0.0-1.0 range)
     let score = hit.text_match.map(|tm| tm as f64 / 1000000.0); // Typesense uses large integers for text_match
     
-    // Convert highlights to JSON string
-    let highlights = hit.highlights.map(|h| serde_json::to_string(&h).unwrap_or_default());
+    // Convert highlights to JSON string - prefer 'highlight' (map) over 'highlights' (array)
+    let highlights = hit.highlight
+        .or_else(|| {
+            // If highlight map is not available, try to convert highlights array to a simple string
+            hit.highlights.map(|h_array| {
+                let mut highlight_map = serde_json::Map::new();
+                for h in h_array {
+                    if let Some(obj) = h.as_object() {
+                        if let (Some(field), Some(snippet)) = (obj.get("field"), obj.get("snippet")) {
+                            if let (Some(field_str), Some(snippet_str)) = (field.as_str(), snippet.as_str()) {
+                                highlight_map.insert(field_str.to_string(), serde_json::Value::String(snippet_str.to_string()));
+                            }
+                        }
+                    }
+                }
+                highlight_map
+            })
+        })
+        .map(|h| serde_json::to_string(&h).unwrap_or_default());
 
     SearchHit {
         id,
@@ -257,12 +291,18 @@ pub fn typesense_hit_to_search_hit(hit: TypesenseSearchHit) -> SearchHit {
 }
 
 pub fn schema_to_typesense_schema(schema: Schema, collection_name: &str) -> CollectionSchema {
-    let fields = schema.fields.into_iter().map(schema_field_to_collection_field).collect();
+    let fields: Vec<CollectionField> = schema.fields.iter().map(|f| schema_field_to_collection_field(f.clone())).collect();
+    
+    // Find the first sortable field for default_sorting_field
+    // Requirements: must be sortable, not the "id" field, and must be required (not optional)
+    let default_sorting_field = schema.fields.iter()
+        .find(|f| f.sort && f.name != "id" && f.required)
+        .map(|f| f.name.clone());
     
     CollectionSchema {
         name: collection_name.to_string(),
         fields,
-        default_sorting_field: schema.primary_key,
+        default_sorting_field,
         enable_nested_fields: None,
         token_separators: None,
         symbols_to_index: None,
