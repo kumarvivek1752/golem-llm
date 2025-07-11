@@ -1,4 +1,3 @@
-
 use golem_search::error::{internal_error, search_error_from_status, from_reqwest_error};
 use golem_search::golem::search::types::SearchError;
 use log::trace;
@@ -68,13 +67,6 @@ impl AlgoliaSearchApi {
     }
 
     fn create_request(&self, method: Method, url: &str) -> RequestBuilder  {
-        println!("[Algolia] HTTP {} {}", method, url);
-        println!(
-            "[Algolia] Headers: X-Algolia-Application-Id={}, X-Algolia-API-Key={}...",
-            self.application_id,
-            &self.api_key[..4]
-        );
-
         self.client
             .request(method, url)
             .header("X-Algolia-Application-Id", &self.application_id)
@@ -108,7 +100,7 @@ impl AlgoliaSearchApi {
 
         parse_response(response)
     }
-    //fixed
+
     pub fn save_object(
         &self,
         index_name: &str,
@@ -270,7 +262,6 @@ impl AlgoliaSearchApi {
 
     let url = format!("{}/1/indexes/{}/settings", self.write_url, index_name);
 
-    // fire off the PUT
     let response = self
         .create_request(Method::PUT, &url)
         .json(settings)
@@ -279,7 +270,6 @@ impl AlgoliaSearchApi {
 
     parse_response(response)
  }
-
 
     pub fn _wait_for_task(&self, index_name: &str, task_id: u64) -> Result<(), SearchError> {
         trace!("Waiting for task {task_id} on index {index_name}");

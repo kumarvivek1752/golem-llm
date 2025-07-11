@@ -17,7 +17,6 @@ use std::cell::{RefCell, Cell};
 mod client;
 mod conversions;
 
-/// Since Algolia doesn't have native streaming, we implement pagination-based streaming
 struct AlgoliaSearchStream {
     client: AlgoliaSearchApi,
     index_name: String,
@@ -40,7 +39,6 @@ impl AlgoliaSearchStream {
     }
 
     pub fn subscribe(&self) -> Pollable {
-        // For non-streaming APIs, return an immediately ready pollable
         golem_rust::bindings::wasi::clocks::monotonic_clock::subscribe_duration(0)
     }
 }
@@ -60,7 +58,6 @@ impl GuestSearchStream for AlgoliaSearchStream {
             Ok(response) => {
                 let search_results = algolia_response_to_search_results(response);
                 
-                // Check if we've reached the end
                 let current_page = self.current_page.get();
                 let total_pages = if let (Some(total), Some(per_page)) = (search_results.total, search_results.per_page) {
                     (total + per_page - 1) / per_page // Ceiling division
@@ -135,7 +132,6 @@ impl Guest for AlgoliaComponent {
         match client.delete_index(&name) {
             Ok(response) => {
                 println!("[Algolia] delete_index successful - task_id: {}, deleted_at: {}", response.task_id, response.deleted_at);
-                // Properly consume the response before returning ()
                 let _ = response;
                 Ok(())
             },
@@ -164,7 +160,6 @@ impl Guest for AlgoliaComponent {
         match client.save_object(&index, &algolia_object) {
             Ok(response) => {
                 println!("[Algolia] upsert successful - task_id: {}, object_id: {}", response.task_id, response.object_id);
-                // Properly consume the response before returning ()
                 let _ = response;
                 Ok(())
             },
@@ -187,7 +182,6 @@ impl Guest for AlgoliaComponent {
         match client.save_objects(&index, &algolia_objects) {
             Ok(response) => {
                 println!("[Algolia] upsert_many successful - task_id: {}, object_ids: {:?}", response.task_id, response.object_ids);
-                // Properly consume the response before returning ()
                 let _ = response;
                 Ok(())
             },
@@ -203,7 +197,6 @@ impl Guest for AlgoliaComponent {
         match client.delete_object(&index, &id) {
             Ok(response) => {
                 println!("[Algolia] delete successful - task_id: {}, deleted_at: {}", response.task_id, response.deleted_at);
-                // Properly consume the response before returning ()
                 let _ = response;
                 Ok(())
             },
@@ -219,7 +212,6 @@ impl Guest for AlgoliaComponent {
         match client.delete_objects(&index, &ids) {
             Ok(response) => {
                 println!("[Algolia] delete_many successful - task_id: {}, object_ids: {:?}", response.task_id, response.object_ids);
-                // Properly consume the response before returning ()
                 let _ = response;
                 Ok(())
             },
@@ -312,332 +304,3 @@ impl ExtendedGuest for AlgoliaComponent {
 type DurableAlgoliaComponent = DurableSearch<AlgoliaComponent>;
 
 golem_search::export_search!(DurableAlgoliaComponent with_types_in golem_search);
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use golem_search::golem::search::types::{
-//         Doc, SearchQuery, Schema, SchemaField, FieldType
-//     };
-//     use serde_json::Value;
-//     use std::collections::HashMap;
-
-//     // Mock environment setup for tests
-//     fn setup_test_env() {
-//         // You'll need to set these with actual Algolia credentials for testing
-//         std::env::set_var("ALGOLIA_APPLICATION_ID", "SLPKFQ34PO");
-//         std::env::set_var("ALGOLIA_API_KEY", "76b6638c2c0754b20b008c55dc2356bb");
-//     }
-
-//     fn create_test_doc(id: &str, title: &str, content: &str) -> Doc {
-//         let mut doc_content = HashMap::new();
-//         doc_content.insert("title".to_string(), Value::String(title.to_string()));
-//         doc_content.insert("author".to_string(), Value::String("Test Author".to_string()));
-//         doc_content.insert("year".to_string(), Value::Number(serde_json::Number::from(2023)));
-//         doc_content.insert("genre".to_string(), Value::String("test".to_string()));
-//         doc_content.insert("description".to_string(), Value::String(content.to_string()));
-        
-//         Doc {
-//             id: id.to_string(),
-//             content: serde_json::to_string(&doc_content).unwrap(),
-//         }
-//     }
-
-//     fn create_test_schema() -> Schema {
-//         Schema {
-//             primary_key: Some("objectID".to_string()), // Algolia uses objectID by default
-//             fields: vec![
-//                 SchemaField {
-//                     name: "objectID".to_string(),
-//                     field_type: FieldType::Text,
-//                     required: true,
-//                     facet: false,
-//                     sort: false,
-//                     index: true,
-//                 },
-//                 SchemaField {
-//                     name: "title".to_string(),
-//                     field_type: FieldType::Text,
-//                     required: false,
-//                     facet: false,
-//                     sort: false,
-//                     index: true,
-//                 },
-//                 SchemaField {
-//                     name: "author".to_string(),
-//                     field_type: FieldType::Text,
-//                     required: false,
-//                     facet: true,
-//                     sort: false,
-//                     index: true,
-//                 },
-//                 SchemaField {
-//                     name: "year".to_string(),
-//                     field_type: FieldType::Integer,
-//                     required: true,
-//                     facet: false,
-//                     sort: true,
-//                     index: true,
-//                 },
-//                 SchemaField {
-//                     name: "genre".to_string(),
-//                     field_type: FieldType::Text,
-//                     required: false,
-//                     facet: true,
-//                     sort: false,
-//                     index: true,
-//                 },
-//                 SchemaField {
-//                     name: "description".to_string(),
-//                     field_type: FieldType::Text,
-//                     required: false,
-//                     facet: false,
-//                     sort: false,
-//                     index: true,
-//                 },
-//             ],
-//         }
-//     }
-
-//     #[test]
-//     fn test_stream_search() {
-//         println!("\n[TEST] Starting test_stream_search for Algolia");
-//         setup_test_env();
-//         println!("[TEST] Test environment set up");
-        
-//         let index_name = "test_stream_search_algolia01".to_string();
-//         println!("[TEST] Using index: {}", index_name);
-        
-//         let docs = vec![
-//             create_test_doc("1", "Book One", "First book content"),
-//             create_test_doc("2", "Book Two", "Second book content"),
-//             create_test_doc("3", "Book Three", "Third book content"),
-//             create_test_doc("4", "Book Four", "Fourth book content"),
-//             create_test_doc("5", "Book Five", "Fifth book content"),
-//         ];
-//         println!("[TEST] Created {} test documents", docs.len());
-        
-//         // Note: Algolia doesn't support explicit index creation, indices are created automatically
-//         // when you first add documents. So we'll skip the create_index step.
-        
-//         println!("[TEST] Upserting documents to Algolia (this will create the index automatically)");
-//         let upsert_result = AlgoliaComponent::upsert_many(index_name.clone(), docs);
-        
-//         match upsert_result {
-//             Ok(()) => {
-//                 println!("[TEST] Documents added successfully to Algolia");
-                
-//                 // Test streaming search
-//                 println!("[TEST] Creating search query");
-//                 let search_query = SearchQuery {
-//                     q: Some("book".to_string()),
-//                     filters: vec![],
-//                     sort: vec![],
-//                     facets: vec![],
-//                     page: Some(0), // Algolia uses 0-based page indexing
-//                     per_page: Some(2), // Small page size to test streaming
-//                     offset: None,
-//                     highlight: None,
-//                     config: None,
-//                 };
-                
-//                 println!("[TEST] Query parameters: q={:?}, page={:?}, per_page={:?}", 
-//                     search_query.q, search_query.page, search_query.per_page);
-                
-//                 println!("[TEST] Calling stream_search");
-//                 let stream_result = AlgoliaComponent::stream_search(index_name.clone(), search_query);
-                
-//                 match stream_result {
-//                     Ok(stream) => {
-//                         println!("[TEST] Stream search created successfully");
-//                         println!("[TEST] Stream: {:?}", stream);
-                        
-//                         // Try to get some results from the stream
-//                         println!("[TEST] Attempting to get next batch from stream");
-                        
-//                         // Note: Similar to Typesense, the SearchStream wrapper doesn't expose get_next() directly
-//                         // That's handled by the WIT-generated bindings and the underlying stream implementation
-//                         println!("[TEST] Stream search test completed successfully");
-//                     }
-//                     Err(e) => println!("[TEST] Stream search failed: {:?}", e),
-//                 }
-                
-//                 // Clean up - delete the index
-//                 println!("[TEST] Cleaning up - deleting index");
-//                 let delete_result = AlgoliaComponent::delete_index(index_name);
-//                 println!("[TEST] Delete result: {:?}", delete_result);
-//             }
-//             Err(SearchError::Internal(msg)) if msg.contains("Missing Algolia credentials") => {
-//                 println!("[TEST] Skipping stream search test - Algolia credentials not available");
-//                 println!("[TEST] To run this test, set ALGOLIA_APPLICATION_ID and ALGOLIA_API_KEY environment variables");
-//             }
-//             Err(e) => {
-//                 println!("[TEST] Failed to upsert documents: {:?}", e);
-//                 println!("[TEST] This might be due to missing or invalid Algolia credentials");
-//             }
-//         }
-//     }
-
-//     #[test]
-//     fn test_search() {
-//         println!("\n[TEST] Starting test_search for Algolia");
-//         setup_test_env();
-//         println!("[TEST] Test environment set up");
-        
-//         let index_name = "test_search_algolia".to_string();
-//         let docs = vec![
-//             create_test_doc("1", "The Great Gatsby", "Classic American literature"),
-//             create_test_doc("2", "To Kill a Mockingbird", "Story about justice and morality"),
-//             create_test_doc("3", "1984", "Dystopian novel about surveillance"),
-//         ];
-        
-//         println!("[TEST] Upserting documents to Algolia");
-//         let upsert_result = AlgoliaComponent::upsert_many(index_name.clone(), docs);
-        
-//         match upsert_result {
-//             Ok(()) => {
-//                 println!("[TEST] Documents added successfully");
-                
-//                 // Test basic search
-//                 let search_query = SearchQuery {
-//                     q: Some("Gatsby".to_string()),
-//                     filters: vec![],
-//                     sort: vec![],
-//                     facets: vec![],
-//                     page: Some(0),
-//                     per_page: Some(10),
-//                     offset: None,
-//                     highlight: None,
-//                     config: None,
-//                 };
-                
-//                 let search_result = AlgoliaComponent::search(index_name.clone(), search_query);
-                
-//                 match search_result {
-//                     Ok(results) => {
-//                         println!("[TEST] Search returned {} hits", results.hits.len());
-//                         if let Some(total) = results.total {
-//                             println!("[TEST] Total found: {}", total);
-//                         }
-//                         for hit in results.hits {
-//                             println!("[TEST]   Hit: {} (score: {:?})", hit.id, hit.score);
-//                         }
-//                     }
-//                     Err(e) => println!("[TEST] Search failed: {:?}", e),
-//                 }
-                
-//                 // Clean up
-//                 let _ = AlgoliaComponent::delete_index(index_name);
-//             }
-//             Err(SearchError::Internal(msg)) if msg.contains("Missing Algolia credentials") => {
-//                 println!("[TEST] Skipping search test - Algolia credentials not available");
-//             }
-//             Err(e) => {
-//                 println!("[TEST] Failed to upsert documents: {:?}", e);
-//             }
-//         }
-//     }
-
-//     #[test]
-//     fn test_search_with_filters() {
-//         println!("\n[TEST] Starting test_search_with_filters for Algolia");
-//         setup_test_env();
-        
-//         let index_name = "test_search_filters_algolia".to_string();
-//         let docs = vec![
-//             create_test_doc("1", "Fiction Book", "A great fiction story"),
-//             create_test_doc("2", "Non-Fiction Book", "A factual account"),
-//         ];
-        
-//         let upsert_result = AlgoliaComponent::upsert_many(index_name.clone(), docs);
-        
-//         match upsert_result {
-//             Ok(()) => {
-//                 // Test search with filters
-//                 let search_query = SearchQuery {
-//                     q: Some("book".to_string()),
-//                     filters: vec!["genre:test".to_string()],
-//                     sort: vec![],
-//                     facets: vec![],
-//                     page: Some(0),
-//                     per_page: Some(10),
-//                     offset: None,
-//                     highlight: None,
-//                     config: None,
-//                 };
-                
-//                 let search_result = AlgoliaComponent::search(index_name.clone(), search_query);
-                
-//                 match search_result {
-//                     Ok(results) => {
-//                         println!("[TEST] Filtered search returned {} hits", results.hits.len());
-//                     }
-//                     Err(e) => println!("[TEST] Filtered search failed: {:?}", e),
-//                 }
-                
-//                 // Clean up
-//                 let _ = AlgoliaComponent::delete_index(index_name);
-//             }
-//             Err(SearchError::Internal(msg)) if msg.contains("Missing Algolia credentials") => {
-//                 println!("[TEST] Skipping filtered search test - Algolia credentials not available");
-//             }
-//             Err(e) => {
-//                 println!("[TEST] Failed to upsert documents: {:?}", e);
-//             }
-//         }
-//     }
-
-//     #[test]
-//     fn test_error_handling() {
-//         println!("\n[TEST] Starting test_error_handling for Algolia");
-        
-//         // Test with missing credentials
-//         std::env::remove_var("ALGOLIA_APPLICATION_ID");
-//         std::env::remove_var("ALGOLIA_API_KEY");
-        
-//         let result = AlgoliaComponent::list_indexes();
-//         match result {
-//             Err(SearchError::Internal(msg)) if msg.contains("Missing Algolia credentials") => {
-//                 println!("[TEST] ✓ Correctly failed with missing credentials");
-//             }
-//             Ok(_) => println!("[TEST] ⚠ Unexpectedly succeeded with missing credentials"),
-//             Err(e) => println!("[TEST] ✓ Failed as expected: {:?}", e),
-//         }
-        
-//         println!("[TEST] Error handling tests completed");
-//     }
-
-//     #[test]
-//     fn test_search_stream_implementation() {
-//         println!("\n[TEST] Starting test_search_stream_implementation for Algolia");
-//         setup_test_env();
-        
-//         // Test creating a search stream without actual Algolia connection
-//         let client = AlgoliaSearchApi::new("test_app_id".to_string(), "test_key".to_string());
-//         let query = SearchQuery {
-//             q: Some("test".to_string()),
-//             offset: Some(0),
-//             per_page: Some(5),
-//             page: Some(0),
-//             filters: vec![],
-//             facets: vec![],
-//             sort: vec![],
-//             highlight: None,
-//             config: None,
-//         };
-        
-//         let stream = AlgoliaSearchStream::new(client, "test_index".to_string(), query);
-        
-//         // Test that the stream can be created and subscribed to
-//         let _pollable = stream.subscribe();
-        
-//         // Test that get_next returns Some (even if empty due to no Algolia connection)
-//         let result = stream.get_next();
-//         assert!(result.is_some());
-        
-//         // Test blocking_get_next
-//         let _blocking_result = stream.blocking_get_next();
-        
-//         println!("[TEST] Stream implementation tests completed");
-//     }
-// }
