@@ -1,18 +1,15 @@
 use crate::client::{OpenSearchQuery, OpenSearchSearchResponse, OpenSearchSettings, OpenSearchMappings};
 use golem_search::golem::search::types::{
-    Doc, SearchQuery, SearchResults, SearchHit, Schema, SchemaField, FieldType, HighlightConfig,
+    Doc, SearchQuery, SearchResults, SearchHit, Schema, SchemaField, FieldType,
 };
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 
-/// Convert a Golem Doc to OpenSearch document (JSON Value)
 pub fn doc_to_opensearch_document(doc: Doc) -> Result<Value, String> {
     let mut opensearch_doc = Map::new();
     
-    // Set the ID field
     opensearch_doc.insert("id".to_string(), Value::String(doc.id));
     
-    // Parse the content as JSON and merge fields
     match serde_json::from_str::<Value>(&doc.content) {
         Ok(Value::Object(content_map)) => {
             for (key, value) in content_map {
@@ -20,11 +17,9 @@ pub fn doc_to_opensearch_document(doc: Doc) -> Result<Value, String> {
             }
         }
         Ok(other_value) => {
-            // If content is not an object, store it as 'content' field
             opensearch_doc.insert("content".to_string(), other_value);
         }
         Err(_) => {
-            // If content is not valid JSON, store as string
             opensearch_doc.insert("content".to_string(), Value::String(doc.content));
         }
     }
@@ -32,7 +27,6 @@ pub fn doc_to_opensearch_document(doc: Doc) -> Result<Value, String> {
     Ok(Value::Object(opensearch_doc))
 }
 
-/// Convert OpenSearch document (JSON Value) to Golem Doc
 pub fn opensearch_document_to_doc(document: Value) -> Doc {
     let mut doc_map = match document {
         Value::Object(map) => map,
@@ -43,19 +37,16 @@ pub fn opensearch_document_to_doc(document: Value) -> Doc {
         }
     };
     
-    // Extract ID
     let id = doc_map.remove("id")
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .unwrap_or_else(|| "unknown".to_string());
     
-    // Convert remaining fields to JSON string
     let content = serde_json::to_string(&Value::Object(doc_map))
         .unwrap_or_else(|_| "{}".to_string());
     
     Doc { id, content }
 }
 
-/// Convert Golem SearchQuery to OpenSearch query
 pub fn search_query_to_opensearch_request(query: SearchQuery) -> OpenSearchQuery {
     let mut opensearch_query = OpenSearchQuery {
         query: None,
@@ -67,15 +58,14 @@ pub fn search_query_to_opensearch_request(query: SearchQuery) -> OpenSearchQuery
         _source: None,
     };
     
-    // Build the main query
     if let Some(q) = query.q {
         if q.trim().is_empty() {
-            // Empty query - match all
+
             opensearch_query.query = Some(serde_json::json!({
                 "match_all": {}
             }));
         } else {
-            // Text search query
+
             opensearch_query.query = Some(serde_json::json!({
                 "multi_match": {
                     "query": q,
@@ -85,13 +75,12 @@ pub fn search_query_to_opensearch_request(query: SearchQuery) -> OpenSearchQuery
             }));
         }
     } else {
-        // No query specified - match all
+
         opensearch_query.query = Some(serde_json::json!({
             "match_all": {}
         }));
     }
     
-    // Apply filters if provided
     if !query.filters.is_empty() {
         let mut bool_query = serde_json::json!({
             "bool": {
@@ -101,7 +90,7 @@ pub fn search_query_to_opensearch_request(query: SearchQuery) -> OpenSearchQuery
         });
         
         for filter in query.filters {
-            // Parse filter as key:value or use as a term query
+
             if let Some((field, value)) = filter.split_once(':') {
                 bool_query["bool"]["filter"].as_array_mut().unwrap().push(serde_json::json!({
                     "term": {
@@ -109,7 +98,7 @@ pub fn search_query_to_opensearch_request(query: SearchQuery) -> OpenSearchQuery
                     }
                 }));
             } else {
-                // Use as a query string filter
+
                 bool_query["bool"]["filter"].as_array_mut().unwrap().push(serde_json::json!({
                     "query_string": {
                         "query": filter
@@ -121,24 +110,24 @@ pub fn search_query_to_opensearch_request(query: SearchQuery) -> OpenSearchQuery
         opensearch_query.query = Some(bool_query);
     }
     
-    // Apply sorting if provided
+
     if !query.sort.is_empty() {
         let mut sort_array = Vec::new();
         for sort_field in query.sort {
             if sort_field.starts_with('-') {
-                // Descending order (format: -field)
+
                 let field = &sort_field[1..];
                 let mut sort_obj = Map::new();
                 sort_obj.insert(field.to_string(), serde_json::json!({ "order": "desc" }));
                 sort_array.push(Value::Object(sort_obj));
             } else if let Some((field, order)) = sort_field.split_once(':') {
-                // Field:order format (e.g., "year:desc" or "title:asc")
+
                 let order = if order.to_lowercase() == "desc" { "desc" } else { "asc" };
                 let mut sort_obj = Map::new();
                 sort_obj.insert(field.to_string(), serde_json::json!({ "order": order }));
                 sort_array.push(Value::Object(sort_obj));
             } else {
-                // Ascending order (default)
+
                 let mut sort_obj = Map::new();
                 sort_obj.insert(sort_field, serde_json::json!({ "order": "asc" }));
                 sort_array.push(Value::Object(sort_obj));
@@ -147,7 +136,7 @@ pub fn search_query_to_opensearch_request(query: SearchQuery) -> OpenSearchQuery
         opensearch_query.sort = Some(sort_array);
     }
     
-    // Apply highlighting if provided
+
     if let Some(highlight_config) = query.highlight {
         let mut highlight = serde_json::json!({
             "fields": {}
@@ -158,7 +147,7 @@ pub fn search_query_to_opensearch_request(query: SearchQuery) -> OpenSearchQuery
                 highlight["fields"][field] = serde_json::json!({});
             }
         } else {
-            // Highlight all fields
+
             highlight["fields"]["*"] = serde_json::json!({});
         }
         
@@ -177,15 +166,15 @@ pub fn search_query_to_opensearch_request(query: SearchQuery) -> OpenSearchQuery
         opensearch_query.highlight = Some(highlight);
     }
     
-    // Apply facets as aggregations if provided
+
     if !query.facets.is_empty() {
         let mut aggs = Map::new();
         for facet in query.facets {
-            // Use .keyword for text fields to enable aggregation
+
             let field_name = if facet == "year" { 
-                facet.clone() // Numbers don't need .keyword
+                facet.clone() 
             } else {
-                format!("{}.keyword", facet) // Text fields need .keyword for aggregation
+                format!("{}.keyword", facet) 
             };
             
             aggs.insert(format!("{}_terms", facet), serde_json::json!({
@@ -201,7 +190,7 @@ pub fn search_query_to_opensearch_request(query: SearchQuery) -> OpenSearchQuery
     opensearch_query
 }
 
-/// Convert OpenSearch search response to Golem SearchResults
+
 pub fn opensearch_response_to_search_results(response: OpenSearchSearchResponse) -> SearchResults {
     let hits: Vec<SearchHit> = response.hits.hits.into_iter().map(|hit| {
         let mut highlights = HashMap::new();
@@ -234,7 +223,7 @@ pub fn opensearch_response_to_search_results(response: OpenSearchSearchResponse)
     
     let total = response.hits.total.value;
     
-    // Extract facets from aggregations
+
     let facets = response.aggregations
         .map(|aggs| {
             let mut facet_map = HashMap::new();
@@ -272,14 +261,13 @@ pub fn opensearch_response_to_search_results(response: OpenSearchSearchResponse)
     }
 }
 
-/// Convert Golem Schema to OpenSearch index settings
 pub fn schema_to_opensearch_settings(schema: Schema) -> OpenSearchSettings {
     let mut properties = Map::new();
     
     for field in schema.fields {
         let mut field_mapping = Map::new();
         
-        // Set field type
+
         let opensearch_type = match field.field_type {
             FieldType::Text => "text",
             FieldType::Keyword => "keyword", 
@@ -291,7 +279,7 @@ pub fn schema_to_opensearch_settings(schema: Schema) -> OpenSearchSettings {
         };
         field_mapping.insert("type".to_string(), Value::String(opensearch_type.to_string()));
         
-        // Add analyzer for text fields
+
         if field.field_type == FieldType::Text {
             field_mapping.insert("analyzer".to_string(), Value::String("standard".to_string()));
         }
@@ -301,10 +289,10 @@ pub fn schema_to_opensearch_settings(schema: Schema) -> OpenSearchSettings {
     
     let mappings = OpenSearchMappings {
         properties: Some(properties),
-        dynamic: Some(true), // Allow dynamic mapping for flexibility
+        dynamic: Some(true), 
     };
     
-    // Basic index settings
+
     let mut index_settings = Map::new();
     index_settings.insert("number_of_shards".to_string(), Value::Number(serde_json::Number::from(1)));
     index_settings.insert("number_of_replicas".to_string(), Value::Number(serde_json::Number::from(0)));
@@ -315,11 +303,11 @@ pub fn schema_to_opensearch_settings(schema: Schema) -> OpenSearchSettings {
     }
 }
 
-/// Convert OpenSearch mappings to Golem Schema
+
 pub fn opensearch_mappings_to_schema(mappings_response: Value, primary_key: Option<String>) -> Schema {
     let mut fields = Vec::new();
     
-    // Extract mappings from the response
+
     if let Value::Object(indices) = mappings_response {
         for (_, index_info) in indices {
             if let Some(mappings) = index_info.get("mappings") {
@@ -337,17 +325,17 @@ pub fn opensearch_mappings_to_schema(mappings_response: Value, primary_key: Opti
                                         "boolean" => FieldType::Boolean,
                                         "date" => FieldType::Date,
                                         "geo_point" => FieldType::GeoPoint,
-                                        _ => FieldType::Text, // Default to text for unknown types
+                                        _ => FieldType::Text, 
                                     })
                                     .unwrap_or(FieldType::Text);
                                 
                                 fields.push(SchemaField {
                                     name: field_name.clone(),
                                     field_type,
-                                    required: false, // OpenSearch doesn't have required fields
-                                    facet: field_type == FieldType::Keyword, // Keywords are good for faceting
-                                    sort: true, // Most fields can be sorted
-                                    index: true, // Fields in mappings are indexed
+                                    required: false,
+                                    facet: field_type == FieldType::Keyword,
+                                    sort: true,
+                                    index: true,
                                 });
                             }
                         }
@@ -363,11 +351,11 @@ pub fn opensearch_mappings_to_schema(mappings_response: Value, primary_key: Opti
     }
 }
 
-/// Create a retry query for streaming search
+
 pub fn create_retry_query(original_query: &SearchQuery, partial_hits: &[SearchHit]) -> SearchQuery {
     let mut retry_query = original_query.clone();
     
-    // Calculate new offset based on the number of hits we've already received
+
     let current_offset = retry_query.offset.unwrap_or(0);
     let hits_received = partial_hits.len() as u32;
     retry_query.offset = Some(current_offset + hits_received);

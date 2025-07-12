@@ -1,11 +1,15 @@
-use base64::Engine;
+use golem_search::error::{internal_error, search_error_from_status, from_reqwest_error};
 use golem_search::golem::search::types::SearchError;
+use log::trace;
 use reqwest::{Client, RequestBuilder, Method, Response};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::fmt::Debug;
 
-/// OpenSearch REST API client
+/// The OpenSearch API client for managing indices and performing search
+/// Based on the OpenSearch REST API
+#[derive(Clone)]
 pub struct OpenSearchApi {
     client: Client,
     base_url: String,
@@ -14,7 +18,6 @@ pub struct OpenSearchApi {
     password: Option<String>,
 }
 
-/// OpenSearch index settings for mapping and configuration
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OpenSearchSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -31,7 +34,6 @@ pub struct OpenSearchMappings {
     pub dynamic: Option<bool>,
 }
 
-/// OpenSearch search query structure
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OpenSearchQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -50,8 +52,8 @@ pub struct OpenSearchQuery {
     pub _source: Option<Value>,
 }
 
-/// OpenSearch search response
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct OpenSearchSearchResponse {
     pub took: u32,
     pub timed_out: bool,
@@ -61,6 +63,7 @@ pub struct OpenSearchSearchResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct OpenSearchHits {
     pub total: OpenSearchTotal,
     pub max_score: Option<f64>,
@@ -68,12 +71,14 @@ pub struct OpenSearchHits {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct OpenSearchTotal {
     pub value: u32,
     pub relation: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct OpenSearchHit {
     #[serde(rename = "_index")]
     pub index: String,
@@ -87,7 +92,7 @@ pub struct OpenSearchHit {
     pub highlight: Option<Value>,
 }
 
-/// OpenSearch bulk operation
+
 #[derive(Debug, Serialize)]
 pub struct OpenSearchBulkOperation {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -108,16 +113,16 @@ pub struct OpenSearchBulkAction {
     pub id: String,
 }
 
-/// OpenSearch bulk response
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct OpenSearchBulkResponse {
     pub took: u32,
     pub errors: bool,
     pub items: Vec<Value>,
 }
 
-/// Response for listing indices
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct OpenSearchIndexInfo {
     pub health: Option<String>,
     pub status: Option<String>,
@@ -135,13 +140,14 @@ pub struct OpenSearchIndexInfo {
     pub pri_store_size: Option<String>,
 }
 
-/// Error response from OpenSearch
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct OpenSearchErrorResponse {
     pub error: OpenSearchError,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct OpenSearchError {
     #[serde(rename = "type")]
     pub error_type: String,
@@ -151,10 +157,13 @@ pub struct OpenSearchError {
 }
 
 impl OpenSearchApi {
-    /// Create a new OpenSearch API client
     pub fn new(base_url: String, username: Option<String>, password: Option<String>, api_key: Option<String>) -> Self {
+        let client = Client::builder()
+            .build()
+            .expect("Failed to initialize HTTP client");
+
         Self {
-            client: Self::create_secure_client(),
+            client,
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key,
             username,
@@ -162,239 +171,219 @@ impl OpenSearchApi {
         }
     }
 
-    /// Create a secure client with strict TLS validation (production default)
-    fn create_secure_client() -> Client {
-        Client::builder()
-            .build()
-            .expect("Failed to initialize HTTP client")
-    }
-
-    /// Create an authenticated request
-    fn create_request(&self, method: &str, url: &str) -> RequestBuilder {
-        let method = match method {
-            "GET" => Method::GET,
-            "POST" => Method::POST,
-            "PUT" => Method::PUT,
-            "DELETE" => Method::DELETE,
-            _ => Method::GET,
-        };
-
-        println!("[OpenSearch] HTTP {} {}", method, url);
-
-        let mut request = self.client
+    fn create_request(&self, method: Method, url: &str) -> RequestBuilder {
+        let mut builder = self.client
             .request(method, url)
             .header("Content-Type", "application/json");
 
+        // Add authentication
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("ApiKey {}", api_key));
+            builder = builder.header("Authorization", format!("ApiKey {}", api_key));
         } else if let (Some(username), Some(password)) = (&self.username, &self.password) {
-            let credentials = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", username, password));
-            request = request.header("Authorization", format!("Basic {}", credentials));
-            println!(
-                "[OpenSearch] Headers: Authorization=Basic {}...",
-                &credentials[..8.min(credentials.len())]
-            );
+            builder = builder.basic_auth(username, Some(password));
         }
-        
-        request
+
+        builder
     }
 
-    /// Create an authenticated request with custom content type
-    fn create_request_with_content_type(&self, method: &str, url: &str, content_type: &str) -> RequestBuilder {
-        let method = match method {
-            "GET" => Method::GET,
-            "POST" => Method::POST,
-            "PUT" => Method::PUT,
-            "DELETE" => Method::DELETE,
-            _ => Method::GET,
-        };
-
-        println!("[OpenSearch] HTTP {} {}", method, url);
-
-        let mut request = self.client
+    fn create_request_with_content_type(&self, method: Method, url: &str, content_type: &str) -> RequestBuilder {
+        let mut builder = self.client
             .request(method, url)
             .header("Content-Type", content_type);
 
+        // Add authentication
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("ApiKey {}", api_key));
+            builder = builder.header("Authorization", format!("ApiKey {}", api_key));
         } else if let (Some(username), Some(password)) = (&self.username, &self.password) {
-            let credentials = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", username, password));
-            request = request.header("Authorization", format!("Basic {}", credentials));
-            println!(
-                "[OpenSearch] Headers: Authorization=Basic {}...",
-                &credentials[..8.min(credentials.len())]
-            );
+            builder = builder.basic_auth(username, Some(password));
         }
-        
-        request
+
+        builder
     }
 
-    /// Parse response and handle errors
-    fn parse_response<T: serde::de::DeserializeOwned + Debug>(response: Response) -> Result<T, SearchError> {
-        let status_code = response.status();
-        
-        if status_code.is_success() {
-            response
-                .json::<T>()
-                .map_err(|e| SearchError::Internal(format!("Failed to parse response: {}", e)))
-        } else {
-            let error_body = response
-                .text()
-                .map_err(|e| SearchError::Internal(format!("Failed to read error response: {}", e)))?;
-            
-            if status_code == 404 {
-                Err(SearchError::IndexNotFound)
-            } else if status_code == 429 {
-                Err(SearchError::RateLimited)
-            } else {
-                // Try to parse the error response
-                if let Ok(error_response) = serde_json::from_str::<OpenSearchErrorResponse>(&error_body) {
-                    Err(SearchError::Internal(format!("{}: {}", error_response.error.error_type, error_response.error.reason)))
-                } else {
-                    Err(SearchError::Internal(format!("HTTP {}: {}", status_code, error_body)))
-                }
-            }
-        }
-    }
 
-    /// Create an index
     pub fn create_index(&self, index_name: &str, settings: Option<OpenSearchSettings>) -> Result<(), SearchError> {
-        let url = format!("{}/{}", self.base_url, index_name);
-        
-        let response = if let Some(settings) = settings {
-            self.create_request("PUT", &url)
-                .json(&settings)
-                .send()
-                .map_err(|e| SearchError::Internal(format!("Failed to create index: {}", e)))?
-        } else {
-            self.create_request("PUT", &url)
-                .send()
-                .map_err(|e| SearchError::Internal(format!("Failed to create index: {}", e)))?
-        };
-        
-        Self::parse_response::<serde_json::Value>(response).map(|_| ())
-    }
+        trace!("Creating index: {index_name}");
 
-    /// Delete an index
-    pub fn delete_index(&self, index_name: &str) -> Result<(), SearchError> {
         let url = format!("{}/{}", self.base_url, index_name);
         
-        let response = self.create_request("DELETE", &url)
+        let mut request = self.create_request(Method::PUT, &url);
+        
+        if let Some(settings) = settings {
+            request = request.json(&settings);
+        }
+        
+        let response = request
             .send()
-            .map_err(|e| SearchError::Internal(format!("Failed to delete index: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to create index: {}", e)))?;
         
-        Self::parse_response::<serde_json::Value>(response).map(|_| ())
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(search_error_from_status(response.status()))
+        }
     }
 
-    /// List all indices
+    pub fn delete_index(&self, index_name: &str) -> Result<(), SearchError> {
+        trace!("Deleting index: {index_name}");
+
+        let url = format!("{}/{}", self.base_url, index_name);
+        
+        let response = self.create_request(Method::DELETE, &url)
+            .send()
+            .map_err(|e| internal_error(format!("Failed to delete index: {}", e)))?;
+        
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(search_error_from_status(response.status()))
+        }
+    }
+
     pub fn list_indices(&self) -> Result<Vec<OpenSearchIndexInfo>, SearchError> {
+        trace!("Listing indices");
+
         let url = format!("{}/_cat/indices?format=json", self.base_url);
         
-        let response = self.create_request("GET", &url)
+        let response = self.create_request(Method::GET, &url)
             .send()
-            .map_err(|e| SearchError::Internal(format!("Failed to list indices: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to list indices: {}", e)))?;
         
-        Self::parse_response::<Vec<OpenSearchIndexInfo>>(response)
+        parse_response(response)
     }
 
-    /// Index a single document
     pub fn index_document(&self, index_name: &str, id: &str, document: &Value) -> Result<(), SearchError> {
+        trace!("Indexing document {id} in index: {index_name}");
+
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
         
-        let response = self.create_request("PUT", &url)
+        let response = self.create_request(Method::PUT, &url)
             .json(document)
             .send()
-            .map_err(|e| SearchError::Internal(format!("Failed to index document: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to index document: {}", e)))?;
         
-        Self::parse_response::<serde_json::Value>(response).map(|_| ())
-    }
-
-    /// Bulk index documents
-    pub fn bulk_index(&self, operations: &str) -> Result<OpenSearchBulkResponse, SearchError> {
-        let url = format!("{}/_bulk", self.base_url);
-        
-        let response = self.create_request_with_content_type("POST", &url, "application/x-ndjson")
-            .body(operations.to_string())
-            .send()
-            .map_err(|e| SearchError::Internal(format!("Failed to bulk index: {}", e)))?;
-        
-        Self::parse_response::<OpenSearchBulkResponse>(response)
-    }
-
-    /// Delete a document
-    pub fn delete_document(&self, index_name: &str, id: &str) -> Result<(), SearchError> {
-        let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
-        
-        let response = self.create_request("DELETE", &url)
-            .send()
-            .map_err(|e| SearchError::Internal(format!("Failed to delete document: {}", e)))?;
-        
-        Self::parse_response::<serde_json::Value>(response).map(|_| ())
-    }
-
-    /// Get a document by ID
-    pub fn get_document(&self, index_name: &str, id: &str) -> Result<Option<Value>, SearchError> {
-        let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
-        
-        let response = self.create_request("GET", &url).send();
-        
-        match response {
-            Ok(resp) => {
-                if resp.status() == 404 {
-                    Ok(None)
-                } else {
-                    let doc: Value = Self::parse_response(resp)?;
-                    // Extract the _source field
-                    if let Some(source) = doc.get("_source") {
-                        Ok(Some(source.clone()))
-                    } else {
-                        Ok(None)
-                    }
-                }
-            }
-            Err(e) => {
-                // Check if it's a 404 error
-                if e.to_string().contains("404") {
-                    Ok(None)
-                } else {
-                    Err(SearchError::Internal(format!("Failed to get document: {}", e)))
-                }
-            }
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(search_error_from_status(response.status()))
         }
     }
 
-    /// Search documents
+    pub fn bulk_index(&self, operations: &str) -> Result<OpenSearchBulkResponse, SearchError> {
+        trace!("Performing bulk index operation");
+
+        let url = format!("{}/_bulk", self.base_url);
+        
+        let response = self.create_request_with_content_type(Method::POST, &url, "application/x-ndjson")
+            .body(operations.to_string())
+            .send()
+            .map_err(|e| internal_error(format!("Failed to perform bulk operation: {}", e)))?;
+        
+        parse_response(response)
+    }
+
+    pub fn delete_document(&self, index_name: &str, id: &str) -> Result<(), SearchError> {
+        trace!("Deleting document {id} from index: {index_name}");
+
+        let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
+        
+        let response = self.create_request(Method::DELETE, &url)
+            .send()
+            .map_err(|e| internal_error(format!("Failed to delete document: {}", e)))?;
+        
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(search_error_from_status(response.status()))
+        }
+    }
+
+    pub fn get_document(&self, index_name: &str, id: &str) -> Result<Option<Value>, SearchError> {
+        trace!("Getting document {id} from index: {index_name}");
+
+        let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
+        
+        let response = self.create_request(Method::GET, &url)
+            .send()
+            .map_err(|e| internal_error(format!("Failed to get document: {}", e)))?;
+        
+        if response.status() == 404 {
+            Ok(None)
+        } else if response.status().is_success() {
+            let doc: Value = parse_response(response)?;
+            if let Some(source) = doc.get("_source") {
+                Ok(Some(source.clone()))
+            } else {
+                Ok(None)
+            }
+        } else {
+            Err(search_error_from_status(response.status()))
+        }
+    }
+
     pub fn search(&self, index_name: &str, query: &OpenSearchQuery) -> Result<OpenSearchSearchResponse, SearchError> {
+        trace!("Searching index {index_name} with query: {query:?}");
+
         let url = format!("{}/{}/_search", self.base_url, index_name);
         
-        let response = self.create_request("POST", &url)
+        let response = self.create_request(Method::POST, &url)
             .json(query)
             .send()
-            .map_err(|e| SearchError::Internal(format!("Failed to search: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to search: {}", e)))?;
         
-        Self::parse_response::<OpenSearchSearchResponse>(response)
+        parse_response(response)
     }
 
-    /// Get index mappings (schema)
     pub fn get_mappings(&self, index_name: &str) -> Result<Value, SearchError> {
+        trace!("Getting mappings for index: {index_name}");
+
         let url = format!("{}/{}/_mapping", self.base_url, index_name);
         
-        let response = self.create_request("GET", &url)
+        let response = self.create_request(Method::GET, &url)
             .send()
-            .map_err(|e| SearchError::Internal(format!("Failed to get mappings: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to get mappings: {}", e)))?;
         
-        Self::parse_response::<Value>(response)
+        parse_response(response)
     }
 
-    /// Update index mappings
     pub fn put_mappings(&self, index_name: &str, mappings: &OpenSearchMappings) -> Result<(), SearchError> {
+        trace!("Putting mappings for index: {index_name}");
+
         let url = format!("{}/{}/_mapping", self.base_url, index_name);
         
-        let response = self.create_request("PUT", &url)
+        let response = self.create_request(Method::PUT, &url)
             .json(mappings)
             .send()
-            .map_err(|e| SearchError::Internal(format!("Failed to put mappings: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to put mappings: {}", e)))?;
         
-        Self::parse_response::<serde_json::Value>(response).map(|_| ())
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(search_error_from_status(response.status()))
+        }
+    }
+}
+
+fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, SearchError> {
+    let status = response.status();
+
+    trace!("Received response from OpenSearch API: {response:?}");
+
+    if status.is_success() {
+        let body = response
+            .json::<T>()
+            .map_err(|err| from_reqwest_error("Failed to decode response body", err))?;
+
+        trace!("Received response from OpenSearch API: {body:?}");
+
+        Ok(body)
+    } else {
+        let error_body = response
+            .text()
+            .map_err(|err| from_reqwest_error("Failed to receive error response body", err))?;
+
+        trace!("Received {status} response from OpenSearch API: {error_body:?}");
+
+        Err(search_error_from_status(status))
     }
 }
