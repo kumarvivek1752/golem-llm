@@ -270,7 +270,7 @@ impl Guest for Component {
         
         // Try different filter syntaxes based on the provider
         let filter_attempts = vec![
-            ("Algolia/Elasticsearch", "genre:fiction"),
+            ("Algolia/Elasticsearch/opensearch/typesense", "genre:fiction"),
             ("Meilisearch", "genre = \"fiction\""),
             ("Alternative", "genre=\"fiction\""),
         ];

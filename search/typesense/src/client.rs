@@ -84,7 +84,7 @@ impl TypesenseSearchApi {
         parse_response(response)
     }
 
-    pub fn index_document(&self, collection_name: &str, document: &TypesenseDocument) -> Result<IndexDocumentResponse, SearchError> {
+    pub fn _index_document(&self, collection_name: &str, document: &TypesenseDocument) -> Result<IndexDocumentResponse, SearchError> {
         trace!("Indexing document to collection: {collection_name}");
         
         let url = format!("{}/collections/{}/documents", self.base_url, collection_name);
@@ -103,7 +103,6 @@ impl TypesenseSearchApi {
         
         let url = format!("{}/collections/{}/documents/import", self.base_url, collection_name);
         
-        // Typesense expects newline-delimited JSON for bulk import
         let ndjson = documents.iter()
             .map(|doc| serde_json::to_string(doc).unwrap_or_default())
             .collect::<Vec<_>>()
@@ -164,7 +163,6 @@ impl TypesenseSearchApi {
         
         let url = format!("{}/collections/{}/documents/search", self.base_url, collection_name);
         
-        // Build query string manually for reqwest
         let query_string = self.build_query_string(query)?;
         let full_url = if query_string.is_empty() {
             url
@@ -203,12 +201,11 @@ impl TypesenseSearchApi {
         if let Some(per_page) = query.per_page {
             params.push(format!("per_page={}", per_page));
         }
-        // Add other query parameters as needed...
         
         Ok(params.join("&"))
     }
 
-    pub fn multi_search(&self, searches: &MultiSearchQuery) -> Result<MultiSearchResponse, SearchError> {
+    pub fn _multi_search(&self, searches: &MultiSearchQuery) -> Result<MultiSearchResponse, SearchError> {
         trace!("Performing multi-search");
         
         let url = format!("{}/multi_search", self.base_url);
@@ -225,7 +222,6 @@ impl TypesenseSearchApi {
 
 fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, SearchError> {
     let status = response.status();
-    println!("[Typesense] Response status: {}", status);
 
     trace!("Received response from Typesense API: {response:?}");
 
@@ -258,7 +254,6 @@ fn parse_bulk_import_response(response: Response) -> Result<IndexDocumentsRespon
             .map_err(|err| from_reqwest_error("Failed to read response", err))?;
         println!("[Typesense] Success response body: {}", body_str);
         
-        // Parse NDJSON (newline-delimited JSON) response
         let lines: Vec<&str> = body_str.trim().split('\n').collect();
         let mut success_count = 0;
         let mut total_processed = 0;

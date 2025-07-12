@@ -428,12 +428,8 @@ impl ExtendedGuest for TypesenseComponent {
     }
 }
 
-// Use non-durable version for testing
-// type DurableTypesenseComponent = DurableSearch<TypesenseComponent>;
-// golem_search::export_search!(DurableTypesenseComponent with_types_in golem_search);
-
-// Export the component directly without durability wrapper
-golem_search::export_search!(TypesenseComponent with_types_in golem_search);
+type DurableTypesenseComponent = DurableSearch<TypesenseComponent>;
+golem_search::export_search!(DurableTypesenseComponent with_types_in golem_search);
 
 #[cfg(test)]
 mod tests {

@@ -11,16 +11,14 @@ pub fn doc_to_typesense_document(doc: Doc) -> Result<TypesenseDocument, String> 
     let mut fields: Map<String, Value> = serde_json::from_str(&doc.content)
         .map_err(|e| format!("Failed to parse document content as JSON: {}", e))?;
 
-    // Ensure the document has an id field
     fields.insert("id".to_string(), Value::String(doc.id));
 
     Ok(TypesenseDocument { fields })
 }
 
-pub fn typesense_document_to_doc(doc: TypesenseDocument) -> Doc {
+pub fn _typesense_document_to_doc(doc: TypesenseDocument) -> Doc {
     let mut fields = doc.fields;
     
-    // Extract the id field
     let id = fields.remove("id")
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .unwrap_or_else(|| "unknown".to_string());
@@ -32,8 +30,8 @@ pub fn typesense_document_to_doc(doc: TypesenseDocument) -> Doc {
 
 pub fn search_query_to_typesense_query(query: SearchQuery) -> TypesenseSearchQuery {
     let mut typesense_query = TypesenseSearchQuery {
-        q: query.q.unwrap_or_else(|| "*".to_string()), // Default to match all if no query provided
-        query_by: Some("title,author,description,genre".to_string()), // Default searchable fields
+        q: query.q.unwrap_or_else(|| "*".to_string()), 
+        query_by: Some("title,author,description,genre".to_string()), 
         filter_by: None,
         sort_by: None,
         facet_by: None,
@@ -69,22 +67,18 @@ pub fn search_query_to_typesense_query(query: SearchQuery) -> TypesenseSearchQue
         max_candidates: None,
     };
 
-    // Handle filters - Typesense uses filter_by parameter
     if !query.filters.is_empty() {
         typesense_query.filter_by = Some(query.filters.join(" && "));
     }
 
-    // Handle sort - Typesense uses sort_by parameter
     if !query.sort.is_empty() {
         typesense_query.sort_by = Some(query.sort.join(","));
     }
 
-    // Handle facets - Typesense uses facet_by parameter
     if !query.facets.is_empty() {
         typesense_query.facet_by = Some(query.facets.join(","));
     }
 
-    // Handle highlight configuration
     if let Some(highlight) = query.highlight {
         if let Some(pre_tag) = highlight.pre_tag {
             typesense_query.highlight_start_tag = Some(pre_tag);
@@ -96,25 +90,23 @@ pub fn search_query_to_typesense_query(query: SearchQuery) -> TypesenseSearchQue
             typesense_query.snippet_threshold = Some(max_length);
         }
         
-        // Set fields to highlight - by default highlight all searchable fields
         if !highlight.fields.is_empty() {
             typesense_query.highlight_full_fields = Some(highlight.fields.join(","));
         }
     }
 
-    // Handle search config
     if let Some(config) = query.config {
-        // Set query timeout
+
         if let Some(timeout_ms) = config.timeout_ms {
             typesense_query.search_cutoff_ms = Some(timeout_ms);
         }
 
-        // Set attributes to retrieve
+
         if !config.attributes_to_retrieve.is_empty() {
             typesense_query.include_fields = Some(config.attributes_to_retrieve.join(","));
         }
 
-        // Handle boost fields - this becomes query_by in Typesense
+
         if !config.boost_fields.is_empty() {
             let mut query_by_fields = Vec::new();
             for (field, boost) in config.boost_fields {
@@ -123,7 +115,7 @@ pub fn search_query_to_typesense_query(query: SearchQuery) -> TypesenseSearchQue
             typesense_query.query_by = Some(query_by_fields.join(","));
         }
 
-        // Handle typo tolerance
+
         if let Some(typo_tolerance) = config.typo_tolerance {
             if typo_tolerance {
                 typesense_query.num_typos = Some("2".to_string()); // Allow up to 2 typos
@@ -132,7 +124,7 @@ pub fn search_query_to_typesense_query(query: SearchQuery) -> TypesenseSearchQue
             }
         }
 
-        // Handle exact match boost
+
         if let Some(exact_match_boost) = config.exact_match_boost {
             typesense_query.prioritize_exact_match = Some(exact_match_boost > 0.0);
         }
@@ -140,7 +132,7 @@ pub fn search_query_to_typesense_query(query: SearchQuery) -> TypesenseSearchQue
         // Parse provider-specific parameters
         if let Some(provider_params) = config.provider_params {
             if let Ok(params_map) = serde_json::from_str::<Map<String, Value>>(&provider_params) {
-                // Handle Typesense-specific parameters
+
                 if let Some(exhaustive_search) = params_map.get("exhaustive_search").and_then(|v| v.as_bool()) {
                     typesense_query.exhaustive_search = Some(exhaustive_search);
                 }
@@ -208,7 +200,7 @@ pub fn search_query_to_typesense_query(query: SearchQuery) -> TypesenseSearchQue
 pub fn typesense_response_to_search_results(response: SearchResponse) -> SearchResults {
     let hits = response.hits.into_iter().map(typesense_hit_to_search_hit).collect();
 
-    // Convert facet counts to JSON string
+
     let facets = response.facet_counts.map(|facet_counts| {
         let facets_map: Map<String, Value> = facet_counts.into_iter().map(|facet_count| {
             let values: Map<String, Value> = facet_count.counts.into_iter().map(|facet_value| {
@@ -235,21 +227,18 @@ pub fn typesense_response_to_search_results(response: SearchResponse) -> SearchR
 pub fn typesense_hit_to_search_hit(hit: TypesenseSearchHit) -> SearchHit {
     let mut document = hit.document;
     
-    // Check if the document data is nested under a "document" key
     let (id, content) = if let Some(nested_doc) = document.get("document").and_then(|v| v.as_object()) {
-        // Document data is nested - extract id from the nested document
+
         let id = nested_doc.get("id")
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_else(|| "unknown".to_string());
         
-        // Use the nested document as content, excluding the id
         let mut content_doc = nested_doc.clone();
         content_doc.remove("id");
         let content = serde_json::to_string(&content_doc).unwrap_or_else(|_| "{}".to_string());
         
         (id, content)
     } else {
-        // Document data is at top level - extract id directly
         let id = document.remove("id")
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_else(|| "unknown".to_string());
@@ -259,13 +248,12 @@ pub fn typesense_hit_to_search_hit(hit: TypesenseSearchHit) -> SearchHit {
         (id, content)
     };
     
-    // Calculate score from text_match (normalized to 0.0-1.0 range)
     let score = hit.text_match.map(|tm| tm as f64 / 1000000.0); // Typesense uses large integers for text_match
     
-    // Convert highlights to JSON string - prefer 'highlight' (map) over 'highlights' (array)
+
     let highlights = hit.highlight
         .or_else(|| {
-            // If highlight map is not available, try to convert highlights array to a simple string
+
             hit.highlights.map(|h_array| {
                 let mut highlight_map = serde_json::Map::new();
                 for h in h_array {
@@ -293,8 +281,7 @@ pub fn typesense_hit_to_search_hit(hit: TypesenseSearchHit) -> SearchHit {
 pub fn schema_to_typesense_schema(schema: Schema, collection_name: &str) -> CollectionSchema {
     let fields: Vec<CollectionField> = schema.fields.iter().map(|f| schema_field_to_collection_field(f.clone())).collect();
     
-    // Find the first sortable field for default_sorting_field
-    // Requirements: must be sortable, not the "id" field, and must be required (not optional)
+    
     let default_sorting_field = schema.fields.iter()
         .find(|f| f.sort && f.name != "id" && f.required)
         .map(|f| f.name.clone());
@@ -316,7 +303,7 @@ pub fn schema_field_to_collection_field(field: SchemaField) -> CollectionField {
         FieldType::Integer => "int32",
         FieldType::Float => "float",
         FieldType::Boolean => "bool",
-        FieldType::Date => "int64", // Typesense typically uses timestamps
+        FieldType::Date => "int64", 
         FieldType::GeoPoint => "geopoint",
     }.to_string();
 
@@ -330,7 +317,7 @@ pub fn schema_field_to_collection_field(field: SchemaField) -> CollectionField {
     }
 }
 
-pub fn typesense_schema_to_schema(schema: CollectionSchema) -> Schema {
+pub fn _typesense_schema_to_schema(schema: CollectionSchema) -> Schema {
     let fields = schema.fields.into_iter().map(collection_field_to_schema_field).collect();
     
     Schema {
@@ -346,7 +333,7 @@ pub fn collection_field_to_schema_field(field: CollectionField) -> SchemaField {
         "float" => FieldType::Float,
         "bool" => FieldType::Boolean,
         "geopoint" => FieldType::GeoPoint,
-        _ => FieldType::Text, // Default fallback
+        _ => FieldType::Text, 
     };
 
     SchemaField {
