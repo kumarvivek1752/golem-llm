@@ -8,7 +8,6 @@ use golem_search::golem::search::types::{
 };
 use serde_json::{json, Map, Value};
 
-/// Convert a Golem Doc to an Elasticsearch document Value
 pub fn doc_to_elasticsearch_document(doc: Doc) -> Result<Value, String> {
     // Validate document ID length (Elasticsearch limit is 512 bytes)
     if doc.id.len() > 512 {
@@ -18,7 +17,6 @@ pub fn doc_to_elasticsearch_document(doc: Doc) -> Result<Value, String> {
     let content: Value = serde_json::from_str(&doc.content)
         .map_err(|e| format!("Invalid JSON in document content: {}", e))?;
     
-    // Create a document that includes the ID
     let document = match content {
         Value::Object(mut obj) => {
             obj.insert("id".to_string(), Value::String(doc.id));
@@ -35,13 +33,11 @@ pub fn doc_to_elasticsearch_document(doc: Doc) -> Result<Value, String> {
     Ok(document)
 }
 
-/// Convert an Elasticsearch document to a Golem Doc
 pub fn elasticsearch_document_to_doc(id: String, source: Value) -> Doc {
     let content = serde_json::to_string(&source).unwrap_or_else(|_| "{}".to_string());
     Doc { id, content }
 }
 
-/// Convert a Golem SearchQuery to an Elasticsearch query
 pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQuery {
     let mut es_query = ElasticsearchQuery {
         query: None,
@@ -53,7 +49,6 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
         _source: None,
     };
 
-    // Build the main query
     let mut bool_query = json!({
         "bool": {
             "must": [],
@@ -61,7 +56,6 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
         }
     });
 
-    // Add text search if provided
     if let Some(q) = query.q {
         if !q.trim().is_empty() {
             bool_query["bool"]["must"]
@@ -77,7 +71,6 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
         }
     }
 
-    // Add filters
     for filter in query.filters {
         if let Ok(filter_value) = serde_json::from_str::<Value>(&filter) {
             // JSON filter
@@ -86,7 +79,6 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
                 .unwrap()
                 .push(filter_value);
         } else if filter.contains(':') {
-            // Simple field:value syntax
             let parts: Vec<&str> = filter.splitn(2, ':').collect();
             if parts.len() == 2 {
                 let field = parts[0].trim();
@@ -101,7 +93,6 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
                     }));
             }
         } else if filter.contains('=') {
-            // field = "value" syntax (Meilisearch style)
             let parts: Vec<&str> = filter.splitn(2, '=').collect();
             if parts.len() == 2 {
                 let field = parts[0].trim();
@@ -116,7 +107,6 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
                     }));
             }
         } else {
-            // Fallback: treat as status filter
             bool_query["bool"]["filter"]
                 .as_array_mut()
                 .unwrap()
@@ -128,19 +118,16 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
         }
     }
 
-    // Only set query if we have conditions
     if !bool_query["bool"]["must"].as_array().unwrap().is_empty()
         || !bool_query["bool"]["filter"].as_array().unwrap().is_empty()
     {
         es_query.query = Some(bool_query);
     } else {
-        // Match all if no specific query
         es_query.query = Some(json!({
             "match_all": {}
         }));
     }
 
-    // Add sorting
     if !query.sort.is_empty() {
         let mut sort_array = Vec::new();
         for sort_field in query.sort {
@@ -154,7 +141,6 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
                     }
                 }));
             } else if sort_field.starts_with('-') {
-                // Descending order (alternative syntax)
                 let field = &sort_field[1..];
                 sort_array.push(json!({
                     field: {
@@ -162,7 +148,6 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
                     }
                 }));
             } else {
-                // Ascending order
                 sort_array.push(json!({
                     sort_field: {
                         "order": "asc"
@@ -173,18 +158,15 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
         es_query.sort = Some(sort_array);
     }
 
-    // Add highlighting
     if let Some(highlight_config) = query.highlight {
         let mut highlight = json!({
             "fields": {}
         });
 
-        // Set highlight fields
         for field in highlight_config.fields {
             highlight["fields"][field] = json!({});
         }
 
-        // Set pre/post tags
         if let Some(pre_tag) = highlight_config.pre_tag {
             highlight["pre_tags"] = json!([pre_tag]);
         }
@@ -192,7 +174,6 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
             highlight["post_tags"] = json!([post_tag]);
         }
 
-        // Set fragment size
         if let Some(max_length) = highlight_config.max_length {
             highlight["fragment_size"] = json!(max_length);
         }
@@ -200,7 +181,6 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
         es_query.highlight = Some(highlight);
     }
 
-    // Add aggregations for facets
     if !query.facets.is_empty() {
         let mut aggs = json!({});
         for facet in query.facets {
@@ -214,17 +194,13 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
         es_query.aggs = Some(aggs);
     }
 
-    // Handle search configuration
     if let Some(config) = query.config {
-        // Add source filtering for attributes to retrieve
         if !config.attributes_to_retrieve.is_empty() {
             es_query._source = Some(json!(config.attributes_to_retrieve));
         }
 
-        // Apply boost fields
         if !config.boost_fields.is_empty() && es_query.query.is_some() {
             if let Some(query_obj) = es_query.query.as_mut() {
-                // Modify multi_match to include boosted fields
                 if let Some(multi_match) = query_obj
                     .get_mut("bool")
                     .and_then(|b| b.get_mut("must"))
@@ -245,7 +221,6 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
     es_query
 }
 
-/// Convert Elasticsearch search response to Golem SearchResults
 pub fn elasticsearch_response_to_search_results(
     response: ElasticsearchSearchResponse,
 ) -> SearchResults {
@@ -258,7 +233,7 @@ pub fn elasticsearch_response_to_search_results(
 
     let total = match response.hits.total.relation.as_str() {
         "eq" => Some(response.hits.total.value),
-        "gte" => Some(response.hits.total.value), // At least this many
+        "gte" => Some(response.hits.total.value), 
         _ => None,
     };
 
@@ -274,7 +249,6 @@ pub fn elasticsearch_response_to_search_results(
     }
 }
 
-/// Convert an Elasticsearch hit to a Golem SearchHit
 fn elasticsearch_hit_to_search_hit(hit: ElasticsearchHit) -> SearchHit {
     let content = hit.source.map(|source| {
         serde_json::to_string(&source).unwrap_or_else(|_| "{}".to_string())
@@ -292,18 +266,16 @@ fn elasticsearch_hit_to_search_hit(hit: ElasticsearchHit) -> SearchHit {
     }
 }
 
-/// Convert a Golem Schema to Elasticsearch settings with mappings
 pub fn schema_to_elasticsearch_settings(schema: Schema) -> ElasticsearchSettings {
     let mut properties = Map::new();
 
     for field in schema.fields {
         let mut field_mapping = Map::new();
 
-        // Map field types
         match field.field_type {
             FieldType::Text => {
                 field_mapping.insert("type".to_string(), Value::String("text".to_string()));
-                // Add keyword subfield for exact matching, sorting, and aggregations
+
                 field_mapping.insert("fields".to_string(), json!({
                     "keyword": {
                         "type": "keyword",
@@ -331,7 +303,6 @@ pub fn schema_to_elasticsearch_settings(schema: Schema) -> ElasticsearchSettings
             }
         }
 
-        // Handle indexing
         if !field.index {
             field_mapping.insert("index".to_string(), Value::Bool(false));
         }
@@ -339,7 +310,6 @@ pub fn schema_to_elasticsearch_settings(schema: Schema) -> ElasticsearchSettings
         properties.insert(field.name, Value::Object(field_mapping));
     }
 
-    // Add strict mapping for common fields to ensure proper sorting
     properties.insert("year".to_string(), json!({
         "type": "integer"
     }));
@@ -349,7 +319,7 @@ pub fn schema_to_elasticsearch_settings(schema: Schema) -> ElasticsearchSettings
 
     let mappings = ElasticsearchMappings {
         properties: Some(properties),
-        dynamic: Some(true), // Allow dynamic fields by default
+        dynamic: Some(true), 
     };
 
     ElasticsearchSettings {
@@ -358,7 +328,6 @@ pub fn schema_to_elasticsearch_settings(schema: Schema) -> ElasticsearchSettings
     }
 }
 
-/// Convert Elasticsearch mappings to a Golem Schema
 pub fn elasticsearch_mappings_to_schema(mappings: Value, index_name: &str) -> Schema {
     let mut fields = Vec::new();
 
@@ -378,7 +347,7 @@ pub fn elasticsearch_mappings_to_schema(mappings: Value, index_name: &str) -> Sc
                         "boolean" => FieldType::Boolean,
                         "date" => FieldType::Date,
                         "geo_point" => FieldType::GeoPoint,
-                        _ => FieldType::Text, // Default to text for unknown types
+                        _ => FieldType::Text, 
                     };
 
                     let index = field_def
@@ -401,15 +370,15 @@ pub fn elasticsearch_mappings_to_schema(mappings: Value, index_name: &str) -> Sc
 
     Schema {
         fields,
-        primary_key: Some("id".to_string()), // Default to 'id' as primary key
+        primary_key: Some("id".to_string()),
     }
 }
 
-/// Create a retry query for failed/partial search operations
+
 pub fn create_retry_query(original_query: &SearchQuery, partial_hits: &[SearchHit]) -> SearchQuery {
     let mut retry_query = original_query.clone();
     
-    // If we have partial results, adjust the offset to continue from where we left off
+
     if !partial_hits.is_empty() {
         let current_offset = original_query.offset.unwrap_or(0);
         let received_count = partial_hits.len() as u32;
@@ -419,12 +388,12 @@ pub fn create_retry_query(original_query: &SearchQuery, partial_hits: &[SearchHi
     retry_query
 }
 
-/// Build Elasticsearch bulk operations string for multiple documents
+
 pub fn build_bulk_operations(index_name: &str, docs: &[Doc], operation: &str) -> Result<String, String> {
     let mut bulk_ops = String::new();
     
     for doc in docs {
-        // Add the operation line
+
         let action = json!({
             operation: {
                 "_index": index_name,
@@ -434,7 +403,7 @@ pub fn build_bulk_operations(index_name: &str, docs: &[Doc], operation: &str) ->
         bulk_ops.push_str(&serde_json::to_string(&action).map_err(|e| e.to_string())?);
         bulk_ops.push('\n');
         
-        // Add the document source (except for delete operations)
+
         if operation != "delete" {
             let document = doc_to_elasticsearch_document(doc.clone())?;
             bulk_ops.push_str(&serde_json::to_string(&document).map_err(|e| e.to_string())?);
@@ -445,7 +414,7 @@ pub fn build_bulk_operations(index_name: &str, docs: &[Doc], operation: &str) ->
     Ok(bulk_ops)
 }
 
-/// Build bulk delete operations string
+
 pub fn build_bulk_delete_operations(index_name: &str, ids: &[String]) -> Result<String, String> {
     let mut bulk_ops = String::new();
     
