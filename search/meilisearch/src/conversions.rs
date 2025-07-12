@@ -7,14 +7,11 @@ use crate::client::{
 use serde_json::{Value as JsonValue, Map as JsonMap};
 use std::collections::HashMap;
 
-/// Convert a Golem Doc to a Meilisearch document
 pub fn doc_to_meilisearch_document(doc: Doc) -> Result<MeilisearchDocument, String> {
     let mut meilisearch_doc = JsonMap::new();
     
-    // Add the document ID - Meilisearch typically uses a specific field as primary key
     meilisearch_doc.insert("id".to_string(), JsonValue::String(doc.id.clone()));
     
-    // Parse the content JSON and merge it into the document
     if let Ok(content_value) = serde_json::from_str::<JsonValue>(&doc.content) {
         if let JsonValue::Object(content_map) = content_value {
             for (key, value) in content_map {
@@ -26,9 +23,8 @@ pub fn doc_to_meilisearch_document(doc: Doc) -> Result<MeilisearchDocument, Stri
     Ok(meilisearch_doc)
 }
 
-/// Convert a Meilisearch document to a Golem Doc
 pub fn meilisearch_document_to_doc(mut doc: MeilisearchDocument) -> Doc {
-    // Extract the ID field
+
     let id = doc.remove("id")
         .and_then(|v| match v {
             JsonValue::String(s) => Some(s),
@@ -37,14 +33,12 @@ pub fn meilisearch_document_to_doc(mut doc: MeilisearchDocument) -> Doc {
         })
         .unwrap_or_else(|| "unknown".to_string());
     
-    // Convert remaining fields to JSON content
     let content = serde_json::to_string(&JsonValue::Object(doc))
         .unwrap_or_else(|_| "{}".to_string());
     
     Doc { id, content }
 }
 
-/// Convert a Golem SearchQuery to a Meilisearch search request
 pub fn search_query_to_meilisearch_request(query: SearchQuery) -> MeilisearchSearchRequest {
     let mut request = MeilisearchSearchRequest {
         q: query.q,
@@ -69,7 +63,6 @@ pub fn search_query_to_meilisearch_request(query: SearchQuery) -> MeilisearchSea
         show_ranking_score: None,
     };
 
-    // Convert filters if present
     if !query.filters.is_empty() {
         request.filter = Some(convert_filters_to_meilisearch(query.filters));
     }
@@ -77,7 +70,6 @@ pub fn search_query_to_meilisearch_request(query: SearchQuery) -> MeilisearchSea
     request
 }
 
-/// Convert Meilisearch search response to Golem SearchResults
 pub fn meilisearch_response_to_search_results(response: MeilisearchSearchResponse) -> SearchResults {
     let hits: Vec<SearchHit> = response.hits
         .into_iter()
@@ -85,9 +77,9 @@ pub fn meilisearch_response_to_search_results(response: MeilisearchSearchRespons
             let converted_doc = meilisearch_document_to_doc(doc.clone());
             SearchHit {
                 id: converted_doc.id,
-                score: None, // Meilisearch doesn't return scores by default, would need showRankingScore
+                score: None, 
                 content: Some(converted_doc.content),
-                highlights: None, // Would need to request highlights
+                highlights: None, 
             }
         })
         .collect();
@@ -102,7 +94,6 @@ pub fn meilisearch_response_to_search_results(response: MeilisearchSearchRespons
     }
 }
 
-/// Convert a Golem Schema to Meilisearch settings
 pub fn schema_to_meilisearch_settings(schema: Schema) -> MeilisearchSettings {
     let mut settings = MeilisearchSettings::default();
     
@@ -111,17 +102,15 @@ pub fn schema_to_meilisearch_settings(schema: Schema) -> MeilisearchSettings {
     let mut sortable_attributes = Vec::new();
     
     for field in schema.fields {
-        // In Meilisearch, all fields with index=true become searchable
+
         if field.index {
             searchable_attributes.push(field.name.clone());
         }
         
-        // Fields with facet=true become filterable
         if field.facet {
             filterable_attributes.push(field.name.clone());
         }
         
-        // Fields with sort=true become sortable
         if field.sort {
             sortable_attributes.push(field.name.clone());
         }
@@ -142,11 +131,11 @@ pub fn schema_to_meilisearch_settings(schema: Schema) -> MeilisearchSettings {
     settings
 }
 
-/// Convert Meilisearch settings to a Golem Schema
+
 pub fn meilisearch_settings_to_schema(settings: MeilisearchSettings) -> Schema {
     let mut fields = Vec::new();
     
-    // Get the list of all fields from different attributes
+
     let mut field_names = std::collections::BTreeSet::new();
     
     if let Some(searchable) = &settings.searchable_attributes {
@@ -162,9 +151,9 @@ pub fn meilisearch_settings_to_schema(settings: MeilisearchSettings) -> Schema {
         field_names.extend(displayed.iter().cloned());
     }
     
-    // If no specific attributes, assume all attributes are available (Meilisearch default)
+
     if field_names.is_empty() {
-        // Return a minimal schema indicating all fields are searchable
+
         fields.push(SchemaField {
             name: "*".to_string(),
             field_type: FieldType::Text,
@@ -192,7 +181,7 @@ pub fn meilisearch_settings_to_schema(settings: MeilisearchSettings) -> Schema {
             
             fields.push(SchemaField {
                 name: field_name,
-                field_type: FieldType::Text, // Meilisearch is schema-less, so we assume text
+                field_type: FieldType::Text,
                 required: false,
                 facet,
                 sort,
@@ -207,16 +196,16 @@ pub fn meilisearch_settings_to_schema(settings: MeilisearchSettings) -> Schema {
     }
 }
 
-/// Create a retry query for stream search (pagination)
+
 pub fn create_retry_query(original_query: &SearchQuery, partial_hits: &[SearchHit]) -> SearchQuery {
     let mut retry_query = original_query.clone();
     
-    // Calculate the next offset based on how many hits we already have
+
     let current_offset = original_query.offset.unwrap_or(0);
     let per_page = original_query.per_page.unwrap_or(20);
     let hits_received = partial_hits.len() as u32;
     
-    // If we received fewer hits than the per_page, we might be at the end
+
     if hits_received < per_page {
         retry_query.offset = Some(current_offset + hits_received);
     } else {
@@ -224,23 +213,6 @@ pub fn create_retry_query(original_query: &SearchQuery, partial_hits: &[SearchHi
     }
     
     retry_query
-}
-
-// Helper functions
-
-fn string_to_json_value(s: String) -> JsonValue {
-    // Try to parse as JSON first, fallback to string
-    serde_json::from_str(&s).unwrap_or(JsonValue::String(s))
-}
-
-fn json_value_to_string(value: JsonValue) -> String {
-    match value {
-        JsonValue::String(s) => s,
-        JsonValue::Number(n) => n.to_string(),
-        JsonValue::Bool(b) => b.to_string(),
-        JsonValue::Null => "null".to_string(),
-        JsonValue::Array(_) | JsonValue::Object(_) => serde_json::to_string(&value).unwrap_or_default(),
-    }
 }
 
 fn convert_filters_to_meilisearch(filters: Vec<String>) -> String {
@@ -251,7 +223,8 @@ fn convert_filters_to_meilisearch(filters: Vec<String>) -> String {
     filters.join(" AND ")
 }
 
-fn convert_meilisearch_facets_to_golem(facets: JsonMap<String, JsonValue>) -> HashMap<String, HashMap<String, u64>> {
+// for later development :-
+fn _convert_meilisearch_facets_to_golem(facets: JsonMap<String, JsonValue>) -> HashMap<String, HashMap<String, u64>> {
     let mut result = HashMap::new();
     
     for (facet_name, facet_value) in facets {

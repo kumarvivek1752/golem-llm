@@ -26,7 +26,6 @@ wit-bindgen-rt = { workspace = true }
 base64 = { workspace = true }
 reqwest = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }
-ureq ="2.9"
 
 [package.metadata.component]
 package = "golem:search-algolia"

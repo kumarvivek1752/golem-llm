@@ -481,7 +481,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "ureq",
  "wit-bindgen-rt 0.40.0",
 ]
 

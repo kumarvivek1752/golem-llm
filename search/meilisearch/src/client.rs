@@ -15,7 +15,7 @@ pub struct MeilisearchApi {
     api_key: Option<String>,
 }
 
-// Meilisearch Index object
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MeilisearchIndex {
     #[serde(rename = "taskUid")]
@@ -28,7 +28,7 @@ pub struct MeilisearchIndex {
     pub primary_key: Option<String>,
 }
 
-// Meilisearch Index list response
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MeilisearchIndexListResponse {
     pub results: Vec<MeilisearchIndex>,
@@ -37,7 +37,7 @@ pub struct MeilisearchIndexListResponse {
     pub total: u32,
 }
 
-// Meilisearch Index creation request
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MeilisearchCreateIndexRequest {
     pub uid: String,
@@ -45,7 +45,7 @@ pub struct MeilisearchCreateIndexRequest {
     pub primary_key: Option<String>,
 }
 
-// Meilisearch Task Error response
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MeilisearchTaskError {
     pub message: String,
@@ -55,7 +55,7 @@ pub struct MeilisearchTaskError {
     pub link: String,
 }
 
-// Meilisearch Task response (for async operations)
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MeilisearchTask {
     #[serde(rename = "taskUid", alias = "uid")]
@@ -86,7 +86,7 @@ pub struct MeilisearchTask {
 // Meilisearch Document
 pub type MeilisearchDocument = JsonMap<String, JsonValue>;
 
-// Meilisearch Documents response for fetching
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MeilisearchDocumentsResponse {
     pub results: Vec<MeilisearchDocument>,
@@ -95,7 +95,7 @@ pub struct MeilisearchDocumentsResponse {
     pub total: u32,
 }
 
-// Meilisearch Document fetch request
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MeilisearchDocumentFetchRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -110,7 +110,7 @@ pub struct MeilisearchDocumentFetchRequest {
     pub ids: Option<Vec<String>>,
 }
 
-// Meilisearch Search Request
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MeilisearchSearchRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -141,7 +141,7 @@ pub struct MeilisearchSearchRequest {
     pub show_ranking_score: Option<bool>,
 }
 
-// Meilisearch Search Response
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MeilisearchSearchResponse {
     pub hits: Vec<MeilisearchDocument>,
@@ -156,7 +156,7 @@ pub struct MeilisearchSearchResponse {
     pub facet_distribution: Option<JsonMap<String, JsonValue>>,
 }
 
-// Meilisearch Settings
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct MeilisearchSettings {
     #[serde(rename = "displayedAttributes", skip_serializing_if = "Option::is_none")]
@@ -213,7 +213,7 @@ impl MeilisearchApi {
     }
 }
 
-/// Helper function to parse HTTP responses and handle errors
+
 fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, SearchError> {
     let status = response.status();
     
@@ -239,7 +239,7 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, 
 }
 
 impl MeilisearchApi {
-    // Index Management
+
     pub fn list_indexes(&self) -> Result<MeilisearchIndexListResponse, SearchError> {
         trace!("Listing indexes");
         
@@ -253,7 +253,7 @@ impl MeilisearchApi {
         parse_response(response)
     }
 
-    pub fn get_index(&self, index_uid: &str) -> Result<MeilisearchIndex, SearchError> {
+    pub fn _get_index(&self, index_uid: &str) -> Result<MeilisearchIndex, SearchError> {
         trace!("Getting index: {}", index_uid);
         
         let url = format!("{}/indexes/{}", self.base_url, index_uid);
@@ -293,8 +293,8 @@ impl MeilisearchApi {
         parse_response(response)
     }
 
-    // Document Management
-    pub fn get_documents(&self, index_uid: &str, request: &MeilisearchDocumentFetchRequest) -> Result<MeilisearchDocumentsResponse, SearchError> {
+
+    pub fn _get_documents(&self, index_uid: &str, request: &MeilisearchDocumentFetchRequest) -> Result<MeilisearchDocumentsResponse, SearchError> {
         trace!("Getting documents from index: {}", index_uid);
         
         let url = format!("{}/indexes/{}/documents/fetch", self.base_url, index_uid);
@@ -339,7 +339,7 @@ impl MeilisearchApi {
         parse_response(response)
     }
 
-    pub fn update_documents(&self, index_uid: &str, documents: &[MeilisearchDocument]) -> Result<MeilisearchTask, SearchError> {
+    pub fn _update_documents(&self, index_uid: &str, documents: &[MeilisearchDocument]) -> Result<MeilisearchTask, SearchError> {
         trace!("Updating {} documents in index: {}", documents.len(), index_uid);
         
         let url = format!("{}/indexes/{}/documents", self.base_url, index_uid);
@@ -380,7 +380,7 @@ impl MeilisearchApi {
         parse_response(response)
     }
 
-    pub fn delete_all_documents(&self, index_uid: &str) -> Result<MeilisearchTask, SearchError> {
+    pub fn _delete_all_documents(&self, index_uid: &str) -> Result<MeilisearchTask, SearchError> {
         trace!("Deleting all documents from index: {}", index_uid);
         
         let url = format!("{}/indexes/{}/documents", self.base_url, index_uid);
@@ -393,7 +393,7 @@ impl MeilisearchApi {
         parse_response(response)
     }
 
-    // Search
+
     pub fn search(&self, index_uid: &str, request: &MeilisearchSearchRequest) -> Result<MeilisearchSearchResponse, SearchError> {
         trace!("Searching in index: {}", index_uid);
         
@@ -408,7 +408,7 @@ impl MeilisearchApi {
         parse_response(response)
     }
 
-    // Settings/Schema Management
+
     pub fn get_settings(&self, index_uid: &str) -> Result<MeilisearchSettings, SearchError> {
         trace!("Getting settings for index: {}", index_uid);
         
@@ -436,7 +436,7 @@ impl MeilisearchApi {
         parse_response(response)
     }
 
-    pub fn reset_settings(&self, index_uid: &str) -> Result<MeilisearchTask, SearchError> {
+    pub fn _reset_settings(&self, index_uid: &str) -> Result<MeilisearchTask, SearchError> {
         trace!("Resetting settings for index: {}", index_uid);
         
         let url = format!("{}/indexes/{}/settings", self.base_url, index_uid);
@@ -464,18 +464,11 @@ impl MeilisearchApi {
     }
 
     /// Production-level wait_for_task with exponential backoff
-    /// 
-    /// This function implements a robust polling mechanism with:
-    /// - Exponential backoff starting at 100ms, doubling each retry, capped at 5 seconds
-    /// - Maximum attempts configurable (default 30, allowing up to ~2.5 minutes of waiting)
-    /// - Jitter to prevent thundering herd effects
-    /// - Detailed logging for debugging
-    /// - Enhanced error handling with task error details
+   
     pub fn wait_for_task(&self, task_uid: u64) -> Result<(), SearchError> {
         self.wait_for_task_with_config(task_uid, 30, Duration::from_millis(100), Duration::from_secs(5))
     }
 
-    /// Production-level wait_for_task with configurable parameters
     pub fn wait_for_task_with_config(
         &self, 
         task_uid: u64, 
@@ -511,13 +504,10 @@ impl MeilisearchApi {
                     trace!("Task {} is still {}, waiting {:?} before retry {}/{}", 
                            task_uid, status, delay, attempt, max_attempts);
                     
-                    // Sleep for the current delay
                     std::thread::sleep(delay);
                     
-                    // Calculate next delay with exponential backoff and jitter
                     let next_delay = std::cmp::min(delay * 2, max_delay);
                     
-                    // Add jitter (10% random variation) to prevent thundering herd
                     let jitter_range = next_delay.as_millis() / 10; // 10% jitter
                     let jitter = Duration::from_millis(
                         (task_uid % (jitter_range as u64 * 2)).saturating_sub(jitter_range as u64)
