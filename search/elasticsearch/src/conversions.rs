@@ -1,13 +1,12 @@
 use crate::client::{
     ElasticsearchHit, ElasticsearchMappings, ElasticsearchQuery, ElasticsearchSearchResponse,
-    ElasticsearchSettings, ElasticsearchTotal,
+    ElasticsearchSettings
 };
 use golem_search::golem::search::types::{
-    Doc, FieldType, HighlightConfig, Schema, SchemaField, SearchConfig, SearchHit, SearchQuery,
+    Doc, FieldType, Schema, SchemaField, SearchHit, SearchQuery,
     SearchResults,
 };
 use serde_json::{json, Map, Value};
-use std::collections::HashMap;
 
 /// Convert a Golem Doc to an Elasticsearch document Value
 pub fn doc_to_elasticsearch_document(doc: Doc) -> Result<Value, String> {

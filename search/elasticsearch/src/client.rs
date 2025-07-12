@@ -1,8 +1,15 @@
-use golem_search::golem::search::types::{SearchError};
-use reqwest::{Client, Response};
+use golem_search::error::{internal_error, search_error_from_status, from_reqwest_error};
+use golem_search::golem::search::types::SearchError;
+use log::trace;
+use reqwest::{Client, RequestBuilder, Method, Response};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::fmt::Debug;
 
+/// The Elasticsearch Search API client for managing indices and performing search
+/// Based on the Elasticsearch REST API
+#[derive(Clone)]
 pub struct ElasticsearchApi {
     client: Client,
     base_url: String,
@@ -46,6 +53,7 @@ pub struct ElasticsearchQuery {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ElasticsearchSearchResponse {
     pub took: u32,
     pub timed_out: bool,
@@ -55,6 +63,7 @@ pub struct ElasticsearchSearchResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ElasticsearchHits {
     pub total: ElasticsearchTotal,
     pub max_score: Option<f64>,
@@ -68,6 +77,7 @@ pub struct ElasticsearchTotal {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ElasticsearchHit {
     #[serde(rename = "_index")]
     pub index: String,
@@ -102,6 +112,7 @@ pub struct ElasticsearchBulkAction {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ElasticsearchBulkResponse {
     pub took: u32,
     pub errors: bool,
@@ -109,6 +120,7 @@ pub struct ElasticsearchBulkResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ElasticsearchIndexInfo {
     pub health: Option<String>,
     pub status: Option<String>,
@@ -127,11 +139,13 @@ pub struct ElasticsearchIndexInfo {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ElasticsearchErrorResponse {
     pub error: ElasticsearchError,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ElasticsearchError {
     #[serde(rename = "type")]
     pub error_type: String,
@@ -142,8 +156,12 @@ pub struct ElasticsearchError {
 
 impl ElasticsearchApi {
     pub fn new(base_url: String, username: Option<String>, password: Option<String>, api_key: Option<String>) -> Self {
+        let client = Client::builder()
+            .build()
+            .expect("Failed to initialize HTTP client");
+
         Self {
-            client: Client::new(),
+            client,
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key,
             username,
@@ -151,142 +169,132 @@ impl ElasticsearchApi {
         }
     }
 
-    fn add_auth(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        if let Some(api_key) = &self.api_key {
-            builder.header("Authorization", format!("ApiKey {}", api_key))
-        } else if let (Some(username), Some(password)) = (&self.username, &self.password) {
-            builder.basic_auth(username, Some(password))
-        } else {
-            builder
-        }
-    }
+    fn create_request(&self, method: Method, url: &str) -> RequestBuilder {
+        let mut builder = self.client
+            .request(method, url)
+            .header("Content-Type", "application/json");
 
-    fn handle_error(response: Response) -> SearchError {
-        let status = response.status();
-        
-        if status == 404 {
-            return SearchError::IndexNotFound;
+        // Add authentication
+        if let Some(api_key) = &self.api_key {
+            builder = builder.header("Authorization", format!("ApiKey {}", api_key));
+        } else if let (Some(username), Some(password)) = (&self.username, &self.password) {
+            builder = builder.basic_auth(username, Some(password));
         }
-        
-        if status == 429 {
-            return SearchError::RateLimited;
-        }
-        
-        if let Ok(error_response) = response.json::<ElasticsearchErrorResponse>() {
-            SearchError::Internal(format!("{}: {}", error_response.error.error_type, error_response.error.reason))
-        } else {
-            SearchError::Internal(format!("HTTP {}: Unknown error", status))
-        }
+
+        builder
     }
 
     pub fn create_index(&self, index_name: &str, settings: Option<ElasticsearchSettings>) -> Result<(), SearchError> {
+        trace!("Creating index: {index_name}");
+
         let url = format!("{}/{}", self.base_url, index_name);
         
-        let mut builder = self.add_auth(self.client.put(&url))
-            .header("Content-Type", "application/json");
+        let mut request = self.create_request(Method::PUT, &url);
         
         if let Some(settings) = settings {
-            builder = builder.json(&settings);
+            request = request.json(&settings);
         }
         
-        let response = builder.send().map_err(|e| SearchError::Internal(e.to_string()))?;
+        let response = request
+            .send()
+            .map_err(|e| internal_error(format!("Failed to create index: {}", e)))?;
         
         if response.status().is_success() {
             Ok(())
         } else {
-            Err(Self::handle_error(response))
+            Err(search_error_from_status(response.status()))
         }
     }
 
     pub fn delete_index(&self, index_name: &str) -> Result<(), SearchError> {
+        trace!("Deleting index: {index_name}");
+
         let url = format!("{}/{}", self.base_url, index_name);
         
-        let response = self.add_auth(self.client.delete(&url))
+        let response = self.create_request(Method::DELETE, &url)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| internal_error(format!("Failed to delete index: {}", e)))?;
         
         if response.status().is_success() {
             Ok(())
         } else {
-            Err(Self::handle_error(response))
+            Err(search_error_from_status(response.status()))
         }
     }
 
     pub fn list_indices(&self) -> Result<Vec<ElasticsearchIndexInfo>, SearchError> {
+        trace!("Listing indices");
+
         let url = format!("{}/_cat/indices?format=json", self.base_url);
         
-        let response = self.add_auth(self.client.get(&url))
+        let response = self.create_request(Method::GET, &url)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| internal_error(format!("Failed to list indices: {}", e)))?;
         
-        if response.status().is_success() {
-            response.json::<Vec<ElasticsearchIndexInfo>>()
-                .map_err(|e| SearchError::Internal(format!("Failed to parse response: {}", e)))
-        } else {
-            Err(Self::handle_error(response))
-        }
+        parse_response(response)
     }
 
     pub fn index_document(&self, index_name: &str, id: &str, document: &Value) -> Result<(), SearchError> {
+        trace!("Indexing document {id} in index: {index_name}");
+
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
         
-        let response = self.add_auth(self.client.put(&url))
-            .header("Content-Type", "application/json")
+        let response = self.create_request(Method::PUT, &url)
             .json(document)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| internal_error(format!("Failed to index document: {}", e)))?;
         
         if response.status().is_success() {
             self.refresh_index(index_name)?;
             Ok(())
         } else {
-            Err(Self::handle_error(response))
+            Err(search_error_from_status(response.status()))
         }
     }
 
     pub fn bulk_index(&self, operations: &str) -> Result<ElasticsearchBulkResponse, SearchError> {
+        trace!("Performing bulk index operation");
+
         let url = format!("{}/_bulk", self.base_url);
         
-        let response = self.add_auth(self.client.post(&url))
+        let response = self.create_request(Method::POST, &url)
             .header("Content-Type", "application/x-ndjson")
             .body(operations.to_string())
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| internal_error(format!("Failed to perform bulk operation: {}", e)))?;
         
-        if response.status().is_success() {
-            response.json::<ElasticsearchBulkResponse>()
-                .map_err(|e| SearchError::Internal(format!("Failed to parse response: {}", e)))
-        } else {
-            Err(Self::handle_error(response))
-        }
+        parse_response(response)
     }
 
     pub fn delete_document(&self, index_name: &str, id: &str) -> Result<(), SearchError> {
+        trace!("Deleting document {id} from index: {index_name}");
+
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
         
-        let response = self.add_auth(self.client.delete(&url))
+        let response = self.create_request(Method::DELETE, &url)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| internal_error(format!("Failed to delete document: {}", e)))?;
         
         if response.status().is_success() {
             Ok(())
         } else {
-            Err(Self::handle_error(response))
+            Err(search_error_from_status(response.status()))
         }
     }
 
     pub fn get_document(&self, index_name: &str, id: &str) -> Result<Option<Value>, SearchError> {
+        trace!("Getting document {id} from index: {index_name}");
+
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
         
-        let response = self.add_auth(self.client.get(&url))
+        let response = self.create_request(Method::GET, &url)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| internal_error(format!("Failed to get document: {}", e)))?;
         
         if response.status() == 404 {
             Ok(None)
         } else if response.status().is_success() {
-            let doc: Value = response.json()
-                .map_err(|e| SearchError::Internal(format!("Failed to parse response: {}", e)))?;
+            let doc: Value = parse_response(response)?;
             
             if let Some(source) = doc.get("_source") {
                 Ok(Some(source.clone()))
@@ -294,69 +302,90 @@ impl ElasticsearchApi {
                 Ok(None)
             }
         } else {
-            Err(Self::handle_error(response))
+            Err(search_error_from_status(response.status()))
         }
     }
 
     pub fn search(&self, index_name: &str, query: &ElasticsearchQuery) -> Result<ElasticsearchSearchResponse, SearchError> {
+        trace!("Searching index {index_name} with query: {query:?}");
+
         let url = format!("{}/{}/_search", self.base_url, index_name);
         
-        let response = self.add_auth(self.client.post(&url))
-            .header("Content-Type", "application/json")
+        let response = self.create_request(Method::POST, &url)
             .json(query)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| internal_error(format!("Failed to search: {}", e)))?;
         
-        if response.status().is_success() {
-            response.json::<ElasticsearchSearchResponse>()
-                .map_err(|e| SearchError::Internal(format!("Failed to parse response: {}", e)))
-        } else {
-            Err(Self::handle_error(response))
-        }
+        parse_response(response)
     }
 
     pub fn get_mappings(&self, index_name: &str) -> Result<Value, SearchError> {
+        trace!("Getting mappings for index: {index_name}");
+
         let url = format!("{}/{}/_mapping", self.base_url, index_name);
         
-        let response = self.add_auth(self.client.get(&url))
+        let response = self.create_request(Method::GET, &url)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| internal_error(format!("Failed to get mappings: {}", e)))?;
         
-        if response.status().is_success() {
-            response.json::<Value>()
-                .map_err(|e| SearchError::Internal(format!("Failed to parse response: {}", e)))
-        } else {
-            Err(Self::handle_error(response))
-        }
+        parse_response(response)
     }
 
     pub fn put_mappings(&self, index_name: &str, mappings: &ElasticsearchMappings) -> Result<(), SearchError> {
+        trace!("Putting mappings for index: {index_name}");
+
         let url = format!("{}/{}/_mapping", self.base_url, index_name);
         
-        let response = self.add_auth(self.client.put(&url))
-            .header("Content-Type", "application/json")
+        let response = self.create_request(Method::PUT, &url)
             .json(mappings)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| internal_error(format!("Failed to put mappings: {}", e)))?;
         
         if response.status().is_success() {
             Ok(())
         } else {
-            Err(Self::handle_error(response))
+            Err(search_error_from_status(response.status()))
         }
     }
 
     pub fn refresh_index(&self, index_name: &str) -> Result<(), SearchError> {
+        trace!("Refreshing index: {index_name}");
+
         let url = format!("{}/{}/_refresh", self.base_url, index_name);
         
-        let response = self.add_auth(self.client.post(&url))
+        let response = self.create_request(Method::POST, &url)
             .send()
-            .map_err(|e| SearchError::Internal(e.to_string()))?;
+            .map_err(|e| internal_error(format!("Failed to refresh index: {}", e)))?;
         
         if response.status().is_success() {
             Ok(())
         } else {
+            // Refreshing is not critical, so we can ignore errors
             Ok(())
         }
+    }
+}
+
+fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, SearchError> {
+    let status = response.status();
+
+    trace!("Received response from Elasticsearch API: {response:?}");
+
+    if status.is_success() {
+        let body = response
+            .json::<T>()
+            .map_err(|err| from_reqwest_error("Failed to decode response body", err))?;
+
+        trace!("Received response from Elasticsearch API: {body:?}");
+
+        Ok(body)
+    } else {
+        let error_body = response
+            .text()
+            .map_err(|err| from_reqwest_error("Failed to receive error response body", err))?;
+
+        trace!("Received {status} response from Elasticsearch API: {error_body:?}");
+
+        Err(search_error_from_status(status))
     }
 }

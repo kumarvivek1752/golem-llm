@@ -18,7 +18,6 @@ use std::cell::{Cell, RefCell};
 mod client;
 mod conversions;
 
-/// Elasticsearch search stream implementation
 /// Uses scroll API for streaming large result sets
 struct ElasticsearchSearchStream {
     client: ElasticsearchApi,
@@ -42,7 +41,6 @@ impl ElasticsearchSearchStream {
     }
 
     pub fn subscribe(&self) -> Pollable {
-        // For non-streaming APIs, return an immediately ready pollable
         golem_rust::bindings::wasi::clocks::monotonic_clock::subscribe_duration(0)
     }
 }
@@ -57,12 +55,10 @@ impl GuestSearchStream for ElasticsearchSearchStream {
         if self.scroll_id.borrow().is_none() {
             let mut es_query = search_query_to_elasticsearch_query(self.query.clone());
             
-            // Set scroll parameters
             es_query.from = Some(self.current_offset.get());
             es_query.size = Some(self.query.per_page.unwrap_or(10));
 
-            // Perform initial scroll search
-            let url = format!("{}/_search?scroll=1m", self.index_name);
+            let _url = format!("{}/_search?scroll=1m", self.index_name);
             
             match self.client.search(&self.index_name, &es_query) {
                 Ok(response) => {
@@ -73,12 +69,10 @@ impl GuestSearchStream for ElasticsearchSearchStream {
                         return Some(vec![]);
                     }
 
-                    // Update offset for next request
                     let current_offset = self.current_offset.get();
                     let received_count = search_results.hits.len() as u32;
                     self.current_offset.set(current_offset + received_count);
 
-                    // Check if we've reached the end
                     if let Some(total) = search_results.total {
                         if self.current_offset.get() >= total {
                             self.finished.set(true);
@@ -294,7 +288,6 @@ impl ExtendedGuest for ElasticsearchComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client().unwrap_or_else(|_| {
-            // Return a dummy client in case of error, will fail on actual operations
             ElasticsearchApi::new(
                 "http://localhost:9200".to_string(),
                 None,
@@ -318,3 +311,7 @@ impl ExtendedGuest for ElasticsearchComponent {
 type DurableElasticsearchComponent = DurableSearch<ElasticsearchComponent>;
 
 golem_search::export_search!(DurableElasticsearchComponent with_types_in golem_search);
+
+
+// test 4
+// streaming 
