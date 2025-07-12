@@ -398,3 +398,423 @@ pub fn collection_field_to_schema_field(field: CollectionField) -> SchemaField {
         index: field.index.unwrap_or(true),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::{FacetCount, FacetValue, RequestParams, SearchHit as TypesenseSearchHit};
+    use golem_search::golem::search::types::{HighlightConfig, SearchConfig};
+
+    #[test]
+    fn test_doc_to_typesense_document() {
+        let doc = Doc {
+            id: "test-id".to_string(),
+            content: r#"{"title": "Test Document", "content": "This is a test"}"#.to_string(),
+        };
+
+        let typesense_doc = doc_to_typesense_document(doc).unwrap();
+        assert_eq!(typesense_doc.fields.get("id").unwrap(), "test-id");
+        assert_eq!(typesense_doc.fields.get("title").unwrap(), "Test Document");
+        assert_eq!(typesense_doc.fields.get("content").unwrap(), "This is a test");
+    }
+
+    #[test]
+    fn test_doc_to_typesense_document_invalid_json() {
+        let doc = Doc {
+            id: "test-id".to_string(),
+            content: "invalid json".to_string(),
+        };
+
+        let result = doc_to_typesense_document(doc);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to parse document content as JSON"));
+    }
+
+    #[test]
+    fn test_typesense_document_to_doc() {
+        let mut fields = Map::new();
+        fields.insert("id".to_string(), Value::String("test-id".to_string()));
+        fields.insert("title".to_string(), Value::String("Test Document".to_string()));
+        fields.insert("content".to_string(), Value::String("This is a test".to_string()));
+
+        let typesense_doc = TypesenseDocument { fields };
+        let doc = _typesense_document_to_doc(typesense_doc);
+        assert_eq!(doc.id, "test-id");
+        assert!(doc.content.contains("Test Document"));
+        assert!(doc.content.contains("This is a test"));
+        assert!(!doc.content.contains("\"id\":"));
+    }
+
+    #[test]
+    fn test_typesense_document_to_doc_no_id() {
+        let mut fields = Map::new();
+        fields.insert("title".to_string(), Value::String("Test".to_string()));
+
+        let typesense_doc = TypesenseDocument { fields };
+        let doc = _typesense_document_to_doc(typesense_doc);
+        assert_eq!(doc.id, "unknown");
+    }
+
+    #[test]
+    fn test_search_query_to_typesense_query() {
+        let search_query = SearchQuery {
+            q: Some("test query".to_string()),
+            filters: vec!["category:electronics".to_string(), "price:>100".to_string()],
+            sort: vec!["price:desc".to_string()],
+            facets: vec!["category".to_string(), "brand".to_string()],
+            page: Some(1),
+            per_page: Some(20),
+            offset: Some(10),
+            highlight: Some(HighlightConfig {
+                fields: vec!["title".to_string(), "description".to_string()],
+                pre_tag: Some("<mark>".to_string()),
+                post_tag: Some("</mark>".to_string()),
+                max_length: Some(200),
+            }),
+            config: None,
+        };
+
+        let typesense_query = search_query_to_typesense_query(search_query);
+        assert_eq!(typesense_query.q, "test query");
+        assert_eq!(typesense_query.filter_by, Some("category:electronics && price:>100".to_string()));
+        assert_eq!(typesense_query.sort_by, Some("price:desc".to_string()));
+        assert_eq!(typesense_query.facet_by, Some("category,brand".to_string()));
+        assert_eq!(typesense_query.page, Some(1));
+        assert_eq!(typesense_query.per_page, Some(20));
+        assert_eq!(typesense_query.offset, Some(10));
+        assert_eq!(typesense_query.highlight_start_tag, Some("<mark>".to_string()));
+        assert_eq!(typesense_query.highlight_end_tag, Some("</mark>".to_string()));
+        assert_eq!(typesense_query.snippet_threshold, Some(200));
+        assert_eq!(typesense_query.highlight_full_fields, Some("title,description".to_string()));
+    }
+
+    #[test]
+    fn test_search_query_with_config() {
+        let search_query = SearchQuery {
+            q: Some("test".to_string()),
+            filters: vec![],
+            sort: vec![],
+            facets: vec![],
+            page: None,
+            per_page: None,
+            offset: None,
+            highlight: None,
+            config: Some(SearchConfig {
+                attributes_to_retrieve: vec!["title".to_string(), "price".to_string()],
+                typo_tolerance: Some(false),
+                timeout_ms: Some(5000),
+                boost_fields: vec![("title".to_string(), 2.0), ("description".to_string(), 1.5)],
+                exact_match_boost: Some(1.5),
+                language: None,
+                provider_params: Some(r#"{"exhaustive_search": true, "use_cache": false, "max_facet_values": 100}"#.to_string()),
+            }),
+        };
+
+        let typesense_query = search_query_to_typesense_query(search_query);
+        assert_eq!(typesense_query.include_fields, Some("title,price".to_string()));
+        assert_eq!(typesense_query.num_typos, Some("0".to_string()));
+        assert_eq!(typesense_query.search_cutoff_ms, Some(5000));
+        assert_eq!(typesense_query.query_by, Some("title:2,description:1.5".to_string()));
+        assert_eq!(typesense_query.prioritize_exact_match, Some(true));
+        assert_eq!(typesense_query.exhaustive_search, Some(true));
+        assert_eq!(typesense_query.use_cache, Some(false));
+        assert_eq!(typesense_query.max_facet_values, Some(100));
+    }
+
+    #[test]
+    fn test_schema_to_typesense_schema() {
+        let schema = Schema {
+            fields: vec![
+                SchemaField {
+                    name: "id".to_string(),
+                    field_type: FieldType::Text,
+                    required: true,
+                    facet: false,
+                    sort: false,
+                    index: true,
+                },
+                SchemaField {
+                    name: "title".to_string(),
+                    field_type: FieldType::Text,
+                    required: false,
+                    facet: false,
+                    sort: false,
+                    index: true,
+                },
+                SchemaField {
+                    name: "category".to_string(),
+                    field_type: FieldType::Keyword,
+                    required: false,
+                    facet: true,
+                    sort: false,
+                    index: true,
+                },
+                SchemaField {
+                    name: "price".to_string(),
+                    field_type: FieldType::Float,
+                    required: false,
+                    facet: true,
+                    sort: true,
+                    index: false,
+                },
+            ],
+            primary_key: Some("id".to_string()),
+        };
+
+        let typesense_schema = schema_to_typesense_schema(schema, "test_collection");
+        assert_eq!(typesense_schema.name, "test_collection");
+        assert_eq!(typesense_schema.fields.len(), 4);
+        
+        let title_field = typesense_schema.fields.iter().find(|f| f.name == "title").unwrap();
+        assert_eq!(title_field.field_type, "string");
+        assert_eq!(title_field.index, Some(true));
+        
+        let category_field = typesense_schema.fields.iter().find(|f| f.name == "category").unwrap();
+        assert_eq!(category_field.facet, Some(true));
+        
+        let price_field = typesense_schema.fields.iter().find(|f| f.name == "price").unwrap();
+        assert_eq!(price_field.field_type, "float");
+        assert_eq!(price_field.sort, Some(true));
+        assert_eq!(price_field.index, Some(false));
+    }
+
+    #[test]
+    fn test_schema_field_to_collection_field() {
+        let field = SchemaField {
+            name: "test_field".to_string(),
+            field_type: FieldType::Integer,
+            required: true,
+            facet: true,
+            sort: true,
+            index: false,
+        };
+
+        let collection_field = schema_field_to_collection_field(field);
+        assert_eq!(collection_field.name, "test_field");
+        assert_eq!(collection_field.field_type, "int32");
+        assert_eq!(collection_field.optional, Some(false));
+        assert_eq!(collection_field.facet, Some(true));
+        assert_eq!(collection_field.sort, Some(true));
+        assert_eq!(collection_field.index, Some(false));
+    }
+
+    #[test]
+    fn test_collection_field_to_schema_field() {
+        let collection_field = CollectionField {
+            name: "test_field".to_string(),
+            field_type: "float".to_string(),
+            facet: Some(true),
+            index: Some(false),
+            sort: Some(true),
+            optional: Some(false),
+        };
+
+        let schema_field = collection_field_to_schema_field(collection_field);
+        assert_eq!(schema_field.name, "test_field");
+        assert_eq!(schema_field.field_type, FieldType::Float);
+        assert_eq!(schema_field.required, true);
+        assert_eq!(schema_field.facet, true);
+        assert_eq!(schema_field.sort, true);
+        assert_eq!(schema_field.index, false);
+    }
+
+    #[test]
+    fn test_typesense_schema_to_schema() {
+        let typesense_schema = CollectionSchema {
+            name: "test_collection".to_string(),
+            fields: vec![
+                CollectionField {
+                    name: "title".to_string(),
+                    field_type: "string".to_string(),
+                    facet: Some(false),
+                    index: Some(true),
+                    sort: Some(false),
+                    optional: Some(true),
+                },
+                CollectionField {
+                    name: "price".to_string(),
+                    field_type: "float".to_string(),
+                    facet: Some(true),
+                    index: Some(false),
+                    sort: Some(true),
+                    optional: Some(false),
+                },
+            ],
+            default_sorting_field: Some("price".to_string()),
+            enable_nested_fields: None,
+            token_separators: None,
+            symbols_to_index: None,
+        };
+
+        let schema = _typesense_schema_to_schema(typesense_schema);
+        assert_eq!(schema.primary_key, Some("price".to_string()));
+        assert_eq!(schema.fields.len(), 2);
+        
+        let title_field = schema.fields.iter().find(|f| f.name == "title").unwrap();
+        assert_eq!(title_field.field_type, FieldType::Text);
+        assert_eq!(title_field.required, false);
+        assert_eq!(title_field.index, true);
+        
+        let price_field = schema.fields.iter().find(|f| f.name == "price").unwrap();
+        assert_eq!(price_field.field_type, FieldType::Float);
+        assert_eq!(price_field.required, true);
+        assert_eq!(price_field.facet, true);
+        assert_eq!(price_field.sort, true);
+    }
+
+    #[test]
+    fn test_typesense_response_to_search_results() {
+        let mut hit1 = Map::new();
+        hit1.insert("id".to_string(), Value::String("doc1".to_string()));
+        hit1.insert("title".to_string(), Value::String("Test Document 1".to_string()));
+
+        let mut hit2 = Map::new();
+        hit2.insert("id".to_string(), Value::String("doc2".to_string()));
+        hit2.insert("title".to_string(), Value::String("Test Document 2".to_string()));
+
+        let typesense_response = SearchResponse {
+            hits: vec![
+                TypesenseSearchHit {
+                    document: hit1,
+                    text_match: Some(1000000),
+                    text_match_info: None,
+                    highlight: None,
+                    highlights: None,
+                },
+                TypesenseSearchHit {
+                    document: hit2,
+                    text_match: Some(800000),
+                    text_match_info: None,
+                    highlight: None,
+                    highlights: None,
+                },
+            ],
+            found: 2,
+            found_docs: Some(2),
+            out_of: 2,
+            page: 1,
+            request_params: RequestParams {
+                collection_name: "test".to_string(),
+                per_page: 20,
+                q: "test".to_string(),
+            },
+            search_time_ms: 5,
+            search_cutoff: Some(false),
+            facet_counts: Some(vec![
+                FacetCount {
+                    field_name: "category".to_string(),
+                    counts: vec![
+                        FacetValue {
+                            count: 1,
+                            highlighted: Some("electronics".to_string()),
+                            value: Value::String("electronics".to_string()),
+                        },
+                        FacetValue {
+                            count: 1,
+                            highlighted: Some("books".to_string()),
+                            value: Value::String("books".to_string()),
+                        },
+                    ],
+                    stats: None,
+                },
+            ]),
+        };
+
+        let search_results = typesense_response_to_search_results(typesense_response);
+        assert_eq!(search_results.total, Some(2));
+        assert_eq!(search_results.page, Some(1));
+        assert_eq!(search_results.per_page, Some(20));
+        assert_eq!(search_results.hits.len(), 2);
+        assert_eq!(search_results.hits[0].id, "doc1");
+        assert_eq!(search_results.hits[0].score, Some(1.0));
+        assert_eq!(search_results.hits[1].id, "doc2");
+        assert_eq!(search_results.hits[1].score, Some(0.8));
+        assert!(search_results.facets.is_some());
+        assert_eq!(search_results.took_ms, Some(5));
+    }
+
+    #[test]
+    fn test_typesense_hit_to_search_hit() {
+        let mut document = Map::new();
+        document.insert("id".to_string(), Value::String("doc1".to_string()));
+        document.insert("title".to_string(), Value::String("Test Document".to_string()));
+
+        let highlight = {
+            let mut h = Map::new();
+            h.insert("title".to_string(), Value::String("Test <mark>Document</mark>".to_string()));
+            h
+        };
+
+        let typesense_hit = TypesenseSearchHit {
+            document,
+            text_match: Some(1500000),
+            text_match_info: None,
+            highlight: Some(highlight),
+            highlights: None,
+        };
+
+        let search_hit = typesense_hit_to_search_hit(typesense_hit);
+        assert_eq!(search_hit.id, "doc1");
+        assert_eq!(search_hit.score, Some(1.5));
+        assert!(search_hit.content.is_some());
+        assert!(search_hit.highlights.is_some());
+        let highlights = search_hit.highlights.unwrap();
+        assert!(highlights.contains("Test <mark>Document</mark>"));
+    }
+
+    #[test]
+    fn test_typesense_hit_to_search_hit_nested_document() {
+        let mut nested_doc = Map::new();
+        nested_doc.insert("id".to_string(), Value::String("doc1".to_string()));
+        nested_doc.insert("title".to_string(), Value::String("Test Document".to_string()));
+
+        let mut document = Map::new();
+        document.insert("document".to_string(), Value::Object(nested_doc));
+
+        let typesense_hit = TypesenseSearchHit {
+            document,
+            text_match: Some(1000000),
+            text_match_info: None,
+            highlight: None,
+            highlights: None,
+        };
+
+        let search_hit = typesense_hit_to_search_hit(typesense_hit);
+        assert_eq!(search_hit.id, "doc1");
+        assert_eq!(search_hit.score, Some(1.0));
+        assert!(search_hit.content.is_some());
+        let content = search_hit.content.unwrap();
+        assert!(content.contains("Test Document"));
+        assert!(!content.contains("\"id\":"));
+    }
+
+    #[test]
+    fn test_typesense_hit_with_highlights_array() {
+        let mut document = Map::new();
+        document.insert("id".to_string(), Value::String("doc1".to_string()));
+        document.insert("title".to_string(), Value::String("Test Document".to_string()));
+
+        let highlights = vec![
+            Value::Object({
+                let mut h = Map::new();
+                h.insert("field".to_string(), Value::String("title".to_string()));
+                h.insert("snippet".to_string(), Value::String("Test <mark>Document</mark>".to_string()));
+                h
+            })
+        ];
+
+        let typesense_hit = TypesenseSearchHit {
+            document,
+            text_match: Some(1000000),
+            text_match_info: None,
+            highlight: None,
+            highlights: Some(highlights),
+        };
+
+        let search_hit = typesense_hit_to_search_hit(typesense_hit);
+        assert_eq!(search_hit.id, "doc1");
+        assert!(search_hit.highlights.is_some());
+        let highlights_str = search_hit.highlights.unwrap();
+        assert!(highlights_str.contains("Test <mark>Document</mark>"));
+    }
+}

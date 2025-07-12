@@ -256,3 +256,303 @@ fn _convert_meilisearch_facets_to_golem(
 
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use golem_search::golem::search::types::{HighlightConfig, SearchConfig};
+
+    #[test]
+    fn test_doc_to_meilisearch_document() {
+        let doc = Doc {
+            id: "test-id".to_string(),
+            content: r#"{"title": "Test Document", "content": "This is a test"}"#.to_string(),
+        };
+
+        let meilisearch_doc = doc_to_meilisearch_document(doc).unwrap();
+        assert_eq!(meilisearch_doc.get("id").unwrap(), "test-id");
+        assert_eq!(meilisearch_doc.get("title").unwrap(), "Test Document");
+        assert_eq!(meilisearch_doc.get("content").unwrap(), "This is a test");
+    }
+
+    #[test]
+    fn test_doc_to_meilisearch_document_invalid_json() {
+        let doc = Doc {
+            id: "test-id".to_string(),
+            content: "invalid json".to_string(),
+        };
+
+        let result = doc_to_meilisearch_document(doc);
+        assert!(result.is_ok()); // Should still work, just with id field
+        let meilisearch_doc = result.unwrap();
+        assert_eq!(meilisearch_doc.get("id").unwrap(), "test-id");
+    }
+
+    #[test]
+    fn test_meilisearch_document_to_doc() {
+        let mut meilisearch_doc = JsonMap::new();
+        meilisearch_doc.insert("id".to_string(), JsonValue::String("test-id".to_string()));
+        meilisearch_doc.insert("title".to_string(), JsonValue::String("Test Document".to_string()));
+        meilisearch_doc.insert("content".to_string(), JsonValue::String("This is a test".to_string()));
+
+        let doc = meilisearch_document_to_doc(meilisearch_doc);
+        assert_eq!(doc.id, "test-id");
+        assert!(doc.content.contains("Test Document"));
+        assert!(doc.content.contains("This is a test"));
+    }
+
+    #[test]
+    fn test_meilisearch_document_to_doc_no_id() {
+        let mut meilisearch_doc = JsonMap::new();
+        meilisearch_doc.insert("title".to_string(), JsonValue::String("Test".to_string()));
+
+        let doc = meilisearch_document_to_doc(meilisearch_doc);
+        assert_eq!(doc.id, "unknown");
+    }
+
+    #[test]
+    fn test_meilisearch_document_to_doc_numeric_id() {
+        let mut meilisearch_doc = JsonMap::new();
+        meilisearch_doc.insert("id".to_string(), JsonValue::Number(serde_json::Number::from(123)));
+        meilisearch_doc.insert("title".to_string(), JsonValue::String("Test".to_string()));
+
+        let doc = meilisearch_document_to_doc(meilisearch_doc);
+        assert_eq!(doc.id, "123");
+    }
+
+    #[test]
+    fn test_search_query_to_meilisearch_request() {
+        let search_query = SearchQuery {
+            q: Some("test query".to_string()),
+            filters: vec!["category = electronics".to_string(), "price > 100".to_string()],
+            sort: vec!["price:desc".to_string()],
+            facets: vec!["category".to_string(), "brand".to_string()],
+            page: None,
+            per_page: Some(20),
+            offset: Some(10),
+            highlight: Some(HighlightConfig {
+                fields: vec!["title".to_string(), "description".to_string()],
+                pre_tag: Some("<mark>".to_string()),
+                post_tag: Some("</mark>".to_string()),
+                max_length: Some(200),
+            }),
+            config: None,
+        };
+
+        let meilisearch_request = search_query_to_meilisearch_request(search_query);
+        assert_eq!(meilisearch_request.q, Some("test query".to_string()));
+        assert_eq!(meilisearch_request.filter, Some("category = electronics AND price > 100".to_string()));
+        assert_eq!(meilisearch_request.sort, Some(vec!["price:desc".to_string()]));
+        assert_eq!(meilisearch_request.facets, Some(vec!["category".to_string(), "brand".to_string()]));
+        assert_eq!(meilisearch_request.limit, Some(20));
+        assert_eq!(meilisearch_request.offset, Some(10));
+    }
+
+    #[test]
+    fn test_search_query_with_config() {
+        let search_query = SearchQuery {
+            q: Some("test".to_string()),
+            filters: vec![],
+            sort: vec![],
+            facets: vec![],
+            page: None,
+            per_page: None,
+            offset: None,
+            highlight: None,
+            config: Some(SearchConfig {
+                attributes_to_retrieve: vec!["title".to_string(), "price".to_string()],
+                typo_tolerance: Some(false),
+                timeout_ms: None,
+                boost_fields: vec![],
+                exact_match_boost: None,
+                language: None,
+                provider_params: Some(r#"{"attributes_to_retrieve": ["title", "price"]}"#.to_string()),
+            }),
+        };
+
+        let meilisearch_request = search_query_to_meilisearch_request(search_query);
+        assert_eq!(meilisearch_request.attributes_to_retrieve, Some(vec!["title".to_string(), "price".to_string()]));
+    }
+
+    #[test]
+    fn test_schema_to_meilisearch_settings() {
+        let schema = Schema {
+            fields: vec![
+                SchemaField {
+                    name: "title".to_string(),
+                    field_type: FieldType::Text,
+                    required: false,
+                    facet: false,
+                    sort: false,
+                    index: true,
+                },
+                SchemaField {
+                    name: "category".to_string(),
+                    field_type: FieldType::Keyword,
+                    required: false,
+                    facet: true,
+                    sort: false,
+                    index: true,
+                },
+                SchemaField {
+                    name: "price".to_string(),
+                    field_type: FieldType::Float,
+                    required: false,
+                    facet: true,
+                    sort: true,
+                    index: false,
+                },
+            ],
+            primary_key: Some("id".to_string()),
+        };
+
+        let settings = schema_to_meilisearch_settings(schema);
+        assert_eq!(settings.searchable_attributes, Some(vec!["title".to_string(), "category".to_string()]));
+        assert_eq!(settings.filterable_attributes, Some(vec!["category".to_string(), "price".to_string()]));
+        assert_eq!(settings.sortable_attributes, Some(vec!["price".to_string()]));
+    }
+
+    #[test]
+    fn test_meilisearch_settings_to_schema() {
+        let settings = MeilisearchSettings {
+            searchable_attributes: Some(vec!["title".to_string(), "content".to_string()]),
+            filterable_attributes: Some(vec!["category".to_string(), "price".to_string()]),
+            sortable_attributes: Some(vec!["price".to_string(), "created_at".to_string()]),
+            displayed_attributes: Some(vec!["title".to_string(), "description".to_string()]),
+            ..Default::default()
+        };
+
+        let schema = meilisearch_settings_to_schema(settings);
+        assert!(schema.fields.len() > 0);
+        
+        let title_field = schema.fields.iter().find(|f| f.name == "title").unwrap();
+        assert!(title_field.index);
+        
+        let category_field = schema.fields.iter().find(|f| f.name == "category").unwrap();
+        assert!(category_field.facet);
+        
+        let price_field = schema.fields.iter().find(|f| f.name == "price").unwrap();
+        assert!(price_field.facet);
+        assert!(price_field.sort);
+    }
+
+    #[test]
+    fn test_meilisearch_response_to_search_results() {
+        let mut hit1 = JsonMap::new();
+        hit1.insert("id".to_string(), JsonValue::String("doc1".to_string()));
+        hit1.insert("title".to_string(), JsonValue::String("Test Document 1".to_string()));
+
+        let mut hit2 = JsonMap::new();
+        hit2.insert("id".to_string(), JsonValue::String("doc2".to_string()));
+        hit2.insert("title".to_string(), JsonValue::String("Test Document 2".to_string()));
+
+        let facet_distribution = {
+            let mut facets = JsonMap::new();
+            let mut category_facet = JsonMap::new();
+            category_facet.insert("electronics".to_string(), JsonValue::Number(serde_json::Number::from(1)));
+            category_facet.insert("books".to_string(), JsonValue::Number(serde_json::Number::from(1)));
+            facets.insert("category".to_string(), JsonValue::Object(category_facet));
+            facets
+        };
+
+        let meilisearch_response = MeilisearchSearchResponse {
+            hits: vec![hit1, hit2],
+            estimated_total_hits: 2,
+            limit: 20,
+            offset: 0,
+            processing_time_ms: 5,
+            facet_distribution: Some(facet_distribution),
+            query: "test".to_string(),
+        };
+
+        let search_results = meilisearch_response_to_search_results(meilisearch_response);
+        assert_eq!(search_results.total, Some(2));
+        assert_eq!(search_results.per_page, Some(20));
+        assert_eq!(search_results.hits.len(), 2);
+        assert_eq!(search_results.hits[0].id, "doc1");
+        assert_eq!(search_results.hits[1].id, "doc2");
+        assert!(search_results.facets.is_some());
+        assert_eq!(search_results.took_ms, Some(5));
+    }
+
+    #[test]
+    fn test_create_retry_query() {
+        let original_query = SearchQuery {
+            q: Some("test".to_string()),
+            filters: vec![],
+            sort: vec![],
+            facets: vec![],
+            page: None,
+            per_page: Some(10),
+            offset: Some(20),
+            highlight: None,
+            config: None,
+        };
+
+        let partial_hits = vec![
+            SearchHit {
+                id: "doc1".to_string(),
+                score: Some(1.0),
+                content: Some("{}".to_string()),
+                highlights: None,
+            },
+        ];
+
+        let retry_query = create_retry_query(&original_query, &partial_hits);
+        assert_eq!(retry_query.offset, Some(21)); // 20 + 1 hit received
+    }
+
+    #[test]
+    fn test_create_retry_query_full_page() {
+        let original_query = SearchQuery {
+            q: Some("test".to_string()),
+            filters: vec![],
+            sort: vec![],
+            facets: vec![],
+            page: None,
+            per_page: Some(2),
+            offset: Some(10),
+            highlight: None,
+            config: None,
+        };
+
+        let partial_hits = vec![
+            SearchHit {
+                id: "doc1".to_string(),
+                score: Some(1.0),
+                content: Some("{}".to_string()),
+                highlights: None,
+            },
+            SearchHit {
+                id: "doc2".to_string(),
+                score: Some(1.0),
+                content: Some("{}".to_string()),
+                highlights: None,
+            },
+        ];
+
+        let retry_query = create_retry_query(&original_query, &partial_hits);
+        assert_eq!(retry_query.offset, Some(12)); // 10 + 2 (per_page)
+    }
+
+    #[test]
+    fn test_convert_filters_to_meilisearch() {
+        let filters = vec!["category = electronics".to_string(), "price > 100".to_string()];
+        let meilisearch_filter = convert_filters_to_meilisearch(filters);
+        assert_eq!(meilisearch_filter, "category = electronics AND price > 100");
+    }
+
+    #[test]
+    fn test_convert_meilisearch_facets_to_golem() {
+        let mut facets = JsonMap::new();
+        let mut category_facet = JsonMap::new();
+        category_facet.insert("electronics".to_string(), JsonValue::Number(serde_json::Number::from(5)));
+        category_facet.insert("books".to_string(), JsonValue::Number(serde_json::Number::from(3)));
+        facets.insert("category".to_string(), JsonValue::Object(category_facet));
+
+        let golem_facets = _convert_meilisearch_facets_to_golem(facets);
+        assert_eq!(golem_facets.len(), 1);
+        assert_eq!(golem_facets.get("category").unwrap().get("electronics"), Some(&5));
+        assert_eq!(golem_facets.get("category").unwrap().get("books"), Some(&3));
+    }
+}

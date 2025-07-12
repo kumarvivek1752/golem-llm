@@ -268,7 +268,7 @@ pub fn create_retry_query(original_query: &SearchQuery, partial_hits: &[SearchHi
 #[cfg(test)]
 mod tests {
     use super::*;
-    use golem_search::golem::search::types::HighlightConfig;
+    use golem_search::golem::search::types::{HighlightConfig, SearchConfig};
 
     #[test]
     fn test_doc_to_algolia_object() {
@@ -280,6 +280,46 @@ mod tests {
         let algolia_obj = doc_to_algolia_object(doc).unwrap();
         assert_eq!(algolia_obj.object_id, Some("test-id".to_string()));
         assert_eq!(algolia_obj.content["title"], "Test Document");
+        assert_eq!(algolia_obj.content["content"], "This is a test");
+    }
+
+    #[test]
+    fn test_doc_to_algolia_object_invalid_json() {
+        let doc = Doc {
+            id: "test-id".to_string(),
+            content: "invalid json".to_string(),
+        };
+
+        let result = doc_to_algolia_object(doc);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to parse document content as JSON"));
+    }
+
+    #[test]
+    fn test_algolia_object_to_doc() {
+        let algolia_obj = AlgoliaObject {
+            object_id: Some("test-id".to_string()),
+            content: serde_json::json!({
+                "title": "Test Document",
+                "content": "This is a test"
+            }),
+        };
+
+        let doc = algolia_object_to_doc(algolia_obj);
+        assert_eq!(doc.id, "test-id");
+        assert!(doc.content.contains("Test Document"));
+        assert!(doc.content.contains("This is a test"));
+    }
+
+    #[test]
+    fn test_algolia_object_to_doc_no_id() {
+        let algolia_obj = AlgoliaObject {
+            object_id: None,
+            content: serde_json::json!({"title": "Test"}),
+        };
+
+        let doc = algolia_object_to_doc(algolia_obj);
+        assert_eq!(doc.id, "unknown");
     }
 
     #[test]
@@ -293,9 +333,9 @@ mod tests {
             per_page: Some(20),
             offset: None,
             highlight: Some(HighlightConfig {
-                fields: vec!["title".to_string()],
-                pre_tag: Some("<em>".to_string()),
-                post_tag: Some("</em>".to_string()),
+                fields: vec!["title".to_string(), "description".to_string()],
+                pre_tag: Some("<mark>".to_string()),
+                post_tag: Some("</mark>".to_string()),
                 max_length: Some(200),
             }),
             config: None,
@@ -303,11 +343,38 @@ mod tests {
 
         let algolia_query = search_query_to_algolia_query(search_query);
         assert_eq!(algolia_query.query, Some("test query".to_string()));
-        assert_eq!(
-            algolia_query.facets,
-            vec!["category".to_string(), "brand".to_string()]
-        );
-        // Note: Highlight parameters are handled at the index level, not in search queries
+        assert_eq!(algolia_query.filters, Some("category:electronics AND price:>100".to_string()));
+        assert_eq!(algolia_query.facets, vec!["category".to_string(), "brand".to_string()]);
+        assert_eq!(algolia_query.page, Some(1));
+        assert_eq!(algolia_query.hits_per_page, Some(20));
+    }
+
+    #[test]
+    fn test_search_query_with_config() {
+        let search_query = SearchQuery {
+            q: Some("test".to_string()),
+            filters: vec![],
+            sort: vec![],
+            facets: vec![],
+            page: None,
+            per_page: None,
+            offset: None,
+            highlight: None,
+            config: Some(SearchConfig {
+                attributes_to_retrieve: vec!["title".to_string(), "price".to_string()],
+                typo_tolerance: Some(false),
+                timeout_ms: None,
+                boost_fields: vec![],
+                exact_match_boost: None,
+                language: None,
+                provider_params: Some(r#"{"analytics": true, "numericFilters": ["price>100"]}"#.to_string()),
+            }),
+        };
+
+        let algolia_query = search_query_to_algolia_query(search_query);
+        assert_eq!(algolia_query.attributes_to_retrieve, vec!["title".to_string(), "price".to_string()]);
+        assert_eq!(algolia_query.typo_tolerance, Some(false));
+        assert_eq!(algolia_query.analytics, Some(true));
     }
 
     #[test]
@@ -317,7 +384,7 @@ mod tests {
                 SchemaField {
                     name: "title".to_string(),
                     field_type: FieldType::Text,
-                    required: true,
+                    required: false,
                     facet: false,
                     sort: false,
                     index: true,
@@ -328,13 +395,13 @@ mod tests {
                     required: false,
                     facet: true,
                     sort: false,
-                    index: false,
+                    index: true,
                 },
                 SchemaField {
                     name: "price".to_string(),
                     field_type: FieldType::Float,
                     required: false,
-                    facet: false,
+                    facet: true,
                     sort: true,
                     index: false,
                 },
@@ -343,13 +410,118 @@ mod tests {
         };
 
         let settings = schema_to_algolia_settings(schema);
-        assert!(settings
-            .searchable_attributes
-            .contains(&"title".to_string()));
-        assert!(settings
-            .attributes_for_faceting
-            .contains(&"category".to_string()));
+        assert!(settings.searchable_attributes.contains(&"title".to_string()));
+        assert!(settings.searchable_attributes.contains(&"category".to_string()));
+        assert!(settings.attributes_for_faceting.contains(&"category".to_string()));
+        assert!(settings.attributes_for_faceting.contains(&"price".to_string()));
         assert!(settings.custom_ranking.contains(&"desc(price)".to_string()));
-        // Note: Algolia doesn't support primary_key in settings
+    }
+
+    #[test]
+    fn test_algolia_response_conversion() {
+        let algolia_response = SearchResponse {
+            hits: vec![
+                AlgoliaSearchHit {
+                    object_id: "doc1".to_string(),
+                    content: serde_json::json!({"title": "Test Document 1"}),
+                    highlight_result: Some(serde_json::json!({"title": {"value": "Test <em>Document</em> 1"}})),
+                    snippet_result: None,
+                    ranking_info: Some(crate::client::RankingInfo {
+                        nb_typos: 0,
+                        first_matched_word: 0,
+                        proximity_distance: 0,
+                        user_score: 100,
+                        geo_distance: 0,
+                        geo_precision: 0,
+                        nb_exact_words: 1,
+                        words: 1,
+                        filters: 0,
+                    }),
+                },
+            ],
+            page: 0,
+            nb_hits: 1,
+            nb_pages: 1,
+            hits_per_page: 20,
+            processing_time_ms: 5,
+            facets: Some(serde_json::json!({"category": {"electronics": 1}})),
+            facets_stats: None,
+            exhaustive_nb_hits: true,
+            exhaustive_facets_count: true,
+            query: "test".to_string(),
+            params: "q=test".to_string(),
+        };
+
+        let search_results = algolia_response_to_search_results(algolia_response);
+        assert_eq!(search_results.total, Some(1));
+        assert_eq!(search_results.page, Some(0));
+        assert_eq!(search_results.per_page, Some(20));
+        assert_eq!(search_results.hits.len(), 1);
+        assert_eq!(search_results.hits[0].id, "doc1");
+        assert_eq!(search_results.hits[0].score, Some(100.0));
+        assert!(search_results.facets.is_some());
+        assert_eq!(search_results.took_ms, Some(5));
+    }
+
+    #[test]
+    fn test_create_retry_query() {
+        let original_query = SearchQuery {
+            q: Some("test".to_string()),
+            filters: vec![],
+            sort: vec![],
+            facets: vec![],
+            page: Some(1),
+            per_page: Some(10),
+            offset: None,
+            highlight: None,
+            config: None,
+        };
+
+        let partial_hits = vec![
+            SearchHit {
+                id: "doc1".to_string(),
+                score: Some(1.0),
+                content: Some("{}".to_string()),
+                highlights: None,
+            },
+        ];
+
+        let retry_query = create_retry_query(&original_query, &partial_hits);
+        assert_eq!(retry_query.page, Some(2));
+    }
+
+    #[test]
+    fn test_create_retry_query_with_offset() {
+        let original_query = SearchQuery {
+            q: Some("test".to_string()),
+            filters: vec![],
+            sort: vec![],
+            facets: vec![],
+            page: None,
+            per_page: Some(10),
+            offset: Some(20),
+            highlight: None,
+            config: None,
+        };
+
+        let partial_hits = vec![
+            SearchHit {
+                id: "doc1".to_string(),
+                score: Some(1.0),
+                content: Some("{}".to_string()),
+                highlights: None,
+            },
+        ];
+
+        let retry_query = create_retry_query(&original_query, &partial_hits);
+        assert_eq!(retry_query.offset, Some(21));
+    }
+
+    #[test]
+    fn test_extract_field_from_ranking() {
+        assert_eq!(extract_field_from_ranking("desc(price)"), Some("price".to_string()));
+        assert_eq!(extract_field_from_ranking("asc(created_at)"), Some("created_at".to_string()));
+        assert_eq!(extract_field_from_ranking("invalid"), None);
+        assert_eq!(extract_field_from_ranking("desc()"), Some("".to_string()));
     }
 }

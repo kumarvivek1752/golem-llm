@@ -377,3 +377,112 @@ pub fn create_retry_query(original_query: &SearchQuery, partial_hits: &[SearchHi
 
     retry_query
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use golem_search::golem::search::types::HighlightConfig;
+
+    #[test]
+    fn test_doc_to_opensearch_document() {
+        let doc = Doc {
+            id: "test-id".to_string(),
+            content: r#"{"title": "Test Document", "content": "This is a test"}"#.to_string(),
+        };
+
+        let opensearch_doc = doc_to_opensearch_document(doc).unwrap();
+        assert_eq!(opensearch_doc.get("id").unwrap(), "test-id");
+        assert_eq!(opensearch_doc.get("title").unwrap(), "Test Document");
+        assert_eq!(opensearch_doc.get("content").unwrap(), "This is a test");
+    }
+
+    #[test]
+    fn test_doc_to_opensearch_document_invalid_json() {
+        let doc = Doc {
+            id: "test-id".to_string(),
+            content: "invalid json".to_string(),
+        };
+
+        let opensearch_doc = doc_to_opensearch_document(doc).unwrap();
+        assert_eq!(opensearch_doc.get("id").unwrap(), "test-id");
+        assert_eq!(opensearch_doc.get("content").unwrap(), "invalid json");
+    }
+
+    #[test]
+    fn test_opensearch_document_to_doc() {
+        let opensearch_doc = serde_json::json!({
+            "id": "test-id",
+            "title": "Test Document",
+            "content": "This is a test"
+        });
+
+        let doc = opensearch_document_to_doc(opensearch_doc);
+        assert_eq!(doc.id, "test-id");
+        assert!(doc.content.contains("Test Document"));
+        assert!(doc.content.contains("This is a test"));
+        assert!(!doc.content.contains("\"id\":"));
+    }
+
+    #[test]
+    fn test_opensearch_document_to_doc_no_id() {
+        let opensearch_doc = serde_json::json!({
+            "title": "Test Document"
+        });
+
+        let doc = opensearch_document_to_doc(opensearch_doc);
+        assert_eq!(doc.id, "unknown");
+    }
+
+    #[test]
+    fn test_search_query_to_opensearch_query() {
+        let search_query = SearchQuery {
+            q: Some("test query".to_string()),
+            filters: vec!["category:electronics".to_string()],
+            sort: vec!["price:desc".to_string()],
+            facets: vec!["category".to_string()],
+            page: Some(1),
+            per_page: Some(20),
+            offset: Some(10),
+            highlight: Some(HighlightConfig {
+                fields: vec!["title".to_string()],
+                pre_tag: Some("<mark>".to_string()),
+                post_tag: Some("</mark>".to_string()),
+                max_length: Some(200),
+            }),
+            config: None,
+        };
+
+        let opensearch_query = search_query_to_opensearch_request(search_query);
+        assert!(opensearch_query.query.is_some());
+        assert!(opensearch_query.sort.is_some());
+        assert!(opensearch_query.aggs.is_some());
+        assert!(opensearch_query.highlight.is_some());
+    }
+
+    #[test]
+    fn test_create_retry_query() {
+        let original_query = SearchQuery {
+            q: Some("test".to_string()),
+            filters: vec![],
+            sort: vec![],
+            facets: vec![],
+            page: None,
+            per_page: Some(10),
+            offset: Some(20),
+            highlight: None,
+            config: None,
+        };
+
+        let partial_hits = vec![
+            SearchHit {
+                id: "doc1".to_string(),
+                score: Some(1.0),
+                content: Some("{}".to_string()),
+                highlights: None,
+            },
+        ];
+
+        let retry_query = create_retry_query(&original_query, &partial_hits);
+        assert_eq!(retry_query.offset, Some(21)); // 20 + 1 hit received
+    }
+}

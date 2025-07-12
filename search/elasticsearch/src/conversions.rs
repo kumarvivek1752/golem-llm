@@ -439,3 +439,274 @@ pub fn build_bulk_delete_operations(index_name: &str, ids: &[String]) -> Result<
 
     Ok(bulk_ops)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use golem_search::golem::search::types::{HighlightConfig, SearchConfig};
+    use crate::client::{ElasticsearchHit, ElasticsearchHits, ElasticsearchSearchResponse, ElasticsearchTotal};
+
+    #[test]
+    fn test_doc_to_elasticsearch_document() {
+        let doc = Doc {
+            id: "test-id".to_string(),
+            content: r#"{"title": "Test Document", "content": "This is a test"}"#.to_string(),
+        };
+
+        let es_doc = doc_to_elasticsearch_document(doc).unwrap();
+        assert_eq!(es_doc["id"], "test-id");
+        assert_eq!(es_doc["title"], "Test Document");
+        assert_eq!(es_doc["content"], "This is a test");
+    }
+
+    #[test]
+    fn test_doc_to_elasticsearch_document_id_too_long() {
+        let long_id = "a".repeat(600);
+        let doc = Doc {
+            id: long_id,
+            content: r#"{"title": "Test"}"#.to_string(),
+        };
+
+        let result = doc_to_elasticsearch_document(doc);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Document ID too long"));
+    }
+
+    #[test]
+    fn test_doc_to_elasticsearch_document_invalid_json() {
+        let doc = Doc {
+            id: "test-id".to_string(),
+            content: "invalid json".to_string(),
+        };
+
+        let result = doc_to_elasticsearch_document(doc);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid JSON in document content"));
+    }
+
+    #[test]
+    fn test_elasticsearch_document_to_doc() {
+        let source = serde_json::json!({
+            "title": "Test Document",
+            "content": "This is a test"
+        });
+
+        let doc = elasticsearch_document_to_doc("test-id".to_string(), source);
+        assert_eq!(doc.id, "test-id");
+        assert!(doc.content.contains("Test Document"));
+        assert!(doc.content.contains("This is a test"));
+    }
+
+    #[test]
+    fn test_search_query_to_elasticsearch_query() {
+        let search_query = SearchQuery {
+            q: Some("test query".to_string()),
+            filters: vec!["category:electronics".to_string()],
+            sort: vec!["price:desc".to_string()],
+            facets: vec!["category".to_string()],
+            page: None,
+            per_page: Some(20),
+            offset: Some(10),
+            highlight: Some(HighlightConfig {
+                fields: vec!["title".to_string(), "description".to_string()],
+                pre_tag: Some("<mark>".to_string()),
+                post_tag: Some("</mark>".to_string()),
+                max_length: Some(200),
+            }),
+            config: None,
+        };
+
+        let es_query = search_query_to_elasticsearch_query(search_query);
+        assert_eq!(es_query.from, Some(10));
+        assert_eq!(es_query.size, Some(20));
+        assert!(es_query.query.is_some());
+        assert!(es_query.sort.is_some());
+        assert!(es_query.highlight.is_some());
+        assert!(es_query.aggs.is_some());
+    }
+
+    #[test]
+    fn test_search_query_no_query() {
+        let search_query = SearchQuery {
+            q: None,
+            filters: vec![],
+            sort: vec![],
+            facets: vec![],
+            page: None,
+            per_page: None,
+            offset: None,
+            highlight: None,
+            config: None,
+        };
+
+        let es_query = search_query_to_elasticsearch_query(search_query);
+        assert!(es_query.query.is_some());
+        // Should have match_all query
+        assert_eq!(es_query.query.unwrap()["match_all"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn test_search_query_with_config() {
+        let search_query = SearchQuery {
+            q: Some("test".to_string()),
+            filters: vec![],
+            sort: vec![],
+            facets: vec![],
+            page: None,
+            per_page: None,
+            offset: None,
+            highlight: None,
+            config: Some(SearchConfig {
+                attributes_to_retrieve: vec!["title".to_string(), "price".to_string()],
+                typo_tolerance: None,
+                timeout_ms: None,
+                boost_fields: vec![("title".to_string(), 2.0)],
+                exact_match_boost: None,
+                language: None,
+                provider_params: None,
+            }),
+        };
+
+        let es_query = search_query_to_elasticsearch_query(search_query);
+        assert!(es_query._source.is_some());
+        assert_eq!(es_query._source.unwrap(), serde_json::json!(["title", "price"]));
+    }
+
+    #[test]
+    fn test_elasticsearch_response_to_search_results() {
+        let es_response = ElasticsearchSearchResponse {
+            took: 5,
+            timed_out: false,
+            hits: ElasticsearchHits {
+                total: ElasticsearchTotal {
+                    value: 1,
+                    relation: "eq".to_string(),
+                },
+                max_score: Some(1.0),
+                hits: vec![
+                    ElasticsearchHit {
+                        index: "test-index".to_string(),
+                        id: "doc1".to_string(),
+                        score: Some(1.0),
+                        source: Some(serde_json::json!({"title": "Test Document"})),
+                        highlight: Some(serde_json::json!({"title": ["Test <em>Document</em>"]})),
+                    },
+                ],
+            },
+            aggregations: Some(serde_json::json!({"category": {"buckets": []}})),
+        };
+
+        let search_results = elasticsearch_response_to_search_results(es_response);
+        assert_eq!(search_results.total, Some(1));
+        assert_eq!(search_results.hits.len(), 1);
+        assert_eq!(search_results.hits[0].id, "doc1");
+        assert_eq!(search_results.hits[0].score, Some(1.0));
+        assert!(search_results.facets.is_some());
+        assert_eq!(search_results.took_ms, Some(5));
+    }
+
+    #[test]
+    fn test_schema_to_elasticsearch_settings() {
+        let schema = Schema {
+            fields: vec![
+                SchemaField {
+                    name: "title".to_string(),
+                    field_type: FieldType::Text,
+                    required: false,
+                    facet: false,
+                    sort: false,
+                    index: true,
+                },
+                SchemaField {
+                    name: "category".to_string(),
+                    field_type: FieldType::Keyword,
+                    required: false,
+                    facet: true,
+                    sort: true,
+                    index: true,
+                },
+                SchemaField {
+                    name: "price".to_string(),
+                    field_type: FieldType::Float,
+                    required: false,
+                    facet: false,
+                    sort: true,
+                    index: false,
+                },
+            ],
+            primary_key: Some("id".to_string()),
+        };
+
+        let settings = schema_to_elasticsearch_settings(schema);
+        assert!(settings.mappings.is_some());
+        let mappings = settings.mappings.unwrap();
+        assert!(mappings.properties.is_some());
+        let properties = mappings.properties.unwrap();
+        assert!(properties.contains_key("title"));
+        assert!(properties.contains_key("category"));
+        assert!(properties.contains_key("price"));
+    }
+
+    #[test]
+    fn test_create_retry_query() {
+        let original_query = SearchQuery {
+            q: Some("test".to_string()),
+            filters: vec![],
+            sort: vec![],
+            facets: vec![],
+            page: None,
+            per_page: Some(10),
+            offset: Some(0),
+            highlight: None,
+            config: None,
+        };
+
+        let partial_hits = vec![
+            SearchHit {
+                id: "doc1".to_string(),
+                score: Some(1.0),
+                content: Some("{}".to_string()),
+                highlights: None,
+            },
+            SearchHit {
+                id: "doc2".to_string(),
+                score: Some(0.8),
+                content: Some("{}".to_string()),
+                highlights: None,
+            },
+        ];
+
+        let retry_query = create_retry_query(&original_query, &partial_hits);
+        assert_eq!(retry_query.offset, Some(2));
+    }
+
+    #[test]
+    fn test_build_bulk_operations() {
+        let docs = vec![
+            Doc {
+                id: "doc1".to_string(),
+                content: r#"{"title": "Document 1"}"#.to_string(),
+            },
+            Doc {
+                id: "doc2".to_string(),
+                content: r#"{"title": "Document 2"}"#.to_string(),
+            },
+        ];
+
+        let bulk_ops = build_bulk_operations("test-index", &docs, "index").unwrap();
+        assert!(bulk_ops.contains("doc1"));
+        assert!(bulk_ops.contains("doc2"));
+        assert!(bulk_ops.contains("Document 1"));
+        assert!(bulk_ops.contains("Document 2"));
+    }
+
+    #[test]
+    fn test_build_bulk_delete_operations() {
+        let ids = vec!["doc1".to_string(), "doc2".to_string()];
+
+        let bulk_ops = build_bulk_delete_operations("test-index", &ids).unwrap();
+        assert!(bulk_ops.contains("doc1"));
+        assert!(bulk_ops.contains("doc2"));
+        assert!(bulk_ops.contains("delete"));
+    }
+}
