@@ -39,7 +39,6 @@ pub fn search_query_to_algolia_query(query: SearchQuery) -> AlgoliaSearchQuery {
 
     // Handle filters - Algolia uses the filters field for general attribute filtering
     if !query.filters.is_empty() {
-        // Convert filters to Algolia format - join multiple filters with AND
         // Each filter should be in the format "attribute:value" or "attribute>value", etc.
         algolia_query.filters = Some(query.filters.join(" AND "));
     }
@@ -59,15 +58,13 @@ pub fn search_query_to_algolia_query(query: SearchQuery) -> AlgoliaSearchQuery {
         // For now, we acknowledge but ignore highlight settings
     }
 
-    // Handle search config
     if let Some(config) = query.config {
         algolia_query.attributes_to_retrieve = config.attributes_to_retrieve;
         algolia_query.typo_tolerance = config.typo_tolerance;
 
-        // Parse provider-specific parameters
         if let Some(provider_params) = config.provider_params {
             if let Ok(params_map) = serde_json::from_str::<Map<String, Value>>(&provider_params) {
-                // Handle Algolia-specific parameters
+
                 if let Some(filters) = params_map.get("filters").and_then(|v| v.as_str()) {
                     algolia_query.filters = Some(filters.to_string());
                 }
@@ -77,6 +74,7 @@ pub fn search_query_to_algolia_query(query: SearchQuery) -> AlgoliaSearchQuery {
                 if let Some(analytics) = params_map.get("analytics").and_then(|v| v.as_bool()) {
                     algolia_query.analytics = Some(analytics);
                 }
+                //todo
                 // Note: facetFilters are not supported in this implementation as they're not in the SearchQuery struct
             }
         }
@@ -102,7 +100,6 @@ pub fn algolia_hit_to_search_hit(hit: AlgoliaSearchHit) -> SearchHit {
     let highlights = hit.highlight_result
         .map(|h| serde_json::to_string(&h).unwrap_or_default());
 
-    // Extract score from ranking info if available
     let score = hit.ranking_info
         .as_ref()
         .map(|info| info.user_score as f64);
@@ -194,7 +191,6 @@ pub fn algolia_settings_to_schema(settings: IndexSettings) -> Schema {
             &attr
         };
 
-        // Check if field already exists
         if let Some(existing_field) = fields.iter_mut().find(|f| f.name == field_name) {
             existing_field.facet = true;
         } else {
@@ -229,12 +225,11 @@ pub fn algolia_settings_to_schema(settings: IndexSettings) -> Schema {
 
     Schema {
         fields,
-        primary_key: None, // Algolia doesn't support primary keys in settings
+        primary_key: None, 
     }
 }
 
 fn extract_field_from_ranking(ranking_rule: &str) -> Option<String> {
-    // Extract field name from ranking rules like "desc(field)", "asc(field)"
     if let Some(start) = ranking_rule.find('(') {
         if let Some(end) = ranking_rule.rfind(')') {
             if start < end {
@@ -249,14 +244,12 @@ pub fn create_retry_query(original_query: &SearchQuery, partial_hits: &[SearchHi
     let mut retry_query = original_query.clone();
     
     if !partial_hits.is_empty() {
-        // For Algolia, we adjust the page or offset to continue pagination
         if let Some(current_page) = retry_query.page {
             retry_query.page = Some(current_page + 1);
         } else if let Some(current_offset) = retry_query.offset {
             let hits_received = partial_hits.len() as u32;
             retry_query.offset = Some(current_offset + hits_received);
         } else {
-            // If no pagination was set, start from where we left off
             retry_query.offset = Some(partial_hits.len() as u32);
         }
     }

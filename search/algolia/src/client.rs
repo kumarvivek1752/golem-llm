@@ -50,7 +50,6 @@ impl AlgoliaSearchApi {
             .build()
             .expect("Failed to initialize HTTP client");
 
-        // Algolia URLs require lowercase application IDs
         let search_url = format!(
             "https://{}.algolia.net",
             application_id.to_lowercase()

@@ -60,7 +60,7 @@ impl GuestSearchStream for AlgoliaSearchStream {
                 
                 let current_page = self.current_page.get();
                 let total_pages = if let (Some(total), Some(per_page)) = (search_results.total, search_results.per_page) {
-                    (total + per_page - 1) / per_page // Ceiling division
+                    (total + per_page - 1) / per_page 
                 } else {
                     current_page + 1
                 };
@@ -69,7 +69,6 @@ impl GuestSearchStream for AlgoliaSearchStream {
                     self.finished.set(true);
                 }
 
-                // Prepare for next page
                 self.current_page.set(current_page + 1);
                 
                 let hits = search_results.hits.clone();
@@ -119,7 +118,7 @@ impl Guest for AlgoliaComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         // Algolia doesn't require explicit index creation - indices are created automatically
-        // when you first add documents. According to the golem:search interface spec,
+        // when you first add documents.
         // providers that don't support index creation should return unsupported.
         Err(SearchError::Unsupported)
     }
@@ -285,7 +284,6 @@ impl ExtendedGuest for AlgoliaComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client().unwrap_or_else(|_| {
-            // Return a dummy client in case of error, will fail on actual operations
             AlgoliaSearchApi::new("dummy".to_string(), "dummy".to_string())
         });
         
