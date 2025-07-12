@@ -1,7 +1,6 @@
 #[allow(static_mut_refs)]
 mod bindings;
 
-use golem_rust::atomically;
 use crate::bindings::exports::test::search_exports::test_search_api::*;
 use crate::bindings::golem::search::core;
 use crate::bindings::golem::search::types::*;
@@ -236,7 +235,7 @@ impl Guest for Component {
             config: None,
         };
 
-        let mut search_success = false;
+        let mut _search_success = false;
         for attempt in 1..=10 {
             match core::search(&index_name, &query) {
                 Ok(search_results) if !search_results.hits.is_empty() => {
@@ -247,7 +246,7 @@ impl Guest for Component {
                             results.push(format!("  Score: {:.2}", score));
                         }
                     }
-                    search_success = true;
+                    _search_success = true;
                     break;
                 }
                 Ok(_) => {
