@@ -323,7 +323,7 @@ impl ExtendedGuest for TypesenseComponent {
     
         LOGGING_STATE.with_borrow_mut(|state| state.init());
         
-        let client = Self::create_client().unwrap_or_else(|e| {
+        let client = Self::create_client().unwrap_or_else(|_e| {
             TypesenseSearchApi::new("dummy".to_string(), "http://localhost:8108".to_string())
         });
                 
