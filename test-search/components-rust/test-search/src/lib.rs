@@ -102,7 +102,7 @@ impl Guest for Component {
         let mut results = Vec::new();
 
         if TEST_INDEX == "test-elasticsearch-index"||TEST_INDEX ==  "test-typesense-index" || TEST_INDEX == "test-opensearch-index" {
-            // Elasticsearch requires a different setup for the index
+            // Elasticsearch/typesense/opensearch requires a different setup for the index
             println!("Setting   index: {}", index_name);
             match core::create_index(&index_name, Some(&create_test_schema())) {
                 Ok(_) => results.push("✓ Index created successfully".to_string()),
@@ -539,7 +539,7 @@ impl Guest for Component {
             },
             Err(e) => {
                 results.push(format!("⚠ Schema setup failed: {:?}, proceeding with document insertion", e));
-                // Try to insert documents anyway to auto-create index
+
                 let test_docs = vec![create_test_documents().into_iter().next().unwrap()];
                 if let Err(e) = core::upsert_many(&index_name, &test_docs) {
                     return format!("Document insertion failed: {:?}", e);
@@ -604,7 +604,6 @@ impl Guest for Component {
                 Err(e) => return format!("✗ Index creation failed: {:?}", e),
             }
         } else {
-            // For other providers, we can proceed with schema setup
             println!("Setting up index: {}", index_name);
         }
 
