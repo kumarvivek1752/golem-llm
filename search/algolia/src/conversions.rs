@@ -49,7 +49,6 @@ pub fn search_query_to_algolia_query(query: SearchQuery) -> AlgoliaSearchQuery {
         // For now, we'll include this in the provider params if available
     }
 
-    // Handle highlight configuration
     // Note: Algolia handles highlighting automatically in the index settings
     // and returns _highlightResult in search responses. Query-level highlight
     // parameters are not supported in the search API.
@@ -74,8 +73,6 @@ pub fn search_query_to_algolia_query(query: SearchQuery) -> AlgoliaSearchQuery {
                 if let Some(analytics) = params_map.get("analytics").and_then(|v| v.as_bool()) {
                     algolia_query.analytics = Some(analytics);
                 }
-                //todo
-                // Note: facetFilters are not supported in this implementation as they're not in the SearchQuery struct
             }
         }
     }
