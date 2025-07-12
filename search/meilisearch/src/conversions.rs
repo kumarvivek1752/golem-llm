@@ -12,11 +12,9 @@ pub fn doc_to_meilisearch_document(doc: Doc) -> Result<MeilisearchDocument, Stri
 
     meilisearch_doc.insert("id".to_string(), JsonValue::String(doc.id.clone()));
 
-    if let Ok(content_value) = serde_json::from_str::<JsonValue>(&doc.content) {
-        if let JsonValue::Object(content_map) = content_value {
-            for (key, value) in content_map {
-                meilisearch_doc.insert(key, value);
-            }
+    if let Ok(JsonValue::Object(content_map)) = serde_json::from_str::<JsonValue>(&doc.content) {
+        for (key, value) in content_map {
+            meilisearch_doc.insert(key, value);
         }
     }
 

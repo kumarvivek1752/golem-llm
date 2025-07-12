@@ -533,7 +533,6 @@ impl MeilisearchApi {
     }
 
     /// Production-level wait_for_task with exponential backoff
-
     pub fn wait_for_task(&self, task_uid: u64) -> Result<(), SearchError> {
         self.wait_for_task_with_config(
             task_uid,

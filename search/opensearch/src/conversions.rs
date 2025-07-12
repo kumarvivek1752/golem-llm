@@ -199,17 +199,15 @@ pub fn opensearch_response_to_search_results(response: OpenSearchSearchResponse)
         .into_iter()
         .map(|hit| {
             let mut highlights = HashMap::new();
-            if let Some(highlight) = hit.highlight {
-                if let Value::Object(highlight_map) = highlight {
-                    for (field, values) in highlight_map {
-                        if let Value::Array(values_array) = values {
-                            let highlight_strings: Vec<String> = values_array
-                                .into_iter()
-                                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                .collect();
-                            if !highlight_strings.is_empty() {
-                                highlights.insert(field, highlight_strings);
-                            }
+            if let Some(Value::Object(highlight_map)) = hit.highlight {
+                for (field, values) in highlight_map {
+                    if let Value::Array(values_array) = values {
+                        let highlight_strings: Vec<String> = values_array
+                            .into_iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect();
+                        if !highlight_strings.is_empty() {
+                            highlights.insert(field, highlight_strings);
                         }
                     }
                 }
@@ -239,19 +237,17 @@ pub fn opensearch_response_to_search_results(response: OpenSearchSearchResponse)
                 for (key, value) in aggs_map {
                     if key.ends_with("_terms") {
                         let facet_name = key.strip_suffix("_terms").unwrap_or(&key);
-                        if let Some(buckets) = value.get("buckets") {
-                            if let Value::Array(buckets_array) = buckets {
-                                let facet_values: Vec<String> = buckets_array
-                                    .iter()
-                                    .filter_map(|bucket| {
-                                        bucket
-                                            .get("key")
-                                            .and_then(|k| k.as_str().map(|s| s.to_string()))
-                                    })
-                                    .collect();
-                                if !facet_values.is_empty() {
-                                    facet_map.insert(facet_name.to_string(), facet_values);
-                                }
+                        if let Some(Value::Array(buckets_array)) = value.get("buckets") {
+                            let facet_values: Vec<String> = buckets_array
+                                .iter()
+                                .filter_map(|bucket| {
+                                    bucket
+                                        .get("key")
+                                        .and_then(|k| k.as_str().map(|s| s.to_string()))
+                                })
+                                .collect();
+                            if !facet_values.is_empty() {
+                                facet_map.insert(facet_name.to_string(), facet_values);
                             }
                         }
                     }
@@ -331,36 +327,34 @@ pub fn opensearch_mappings_to_schema(
     if let Value::Object(indices) = mappings_response {
         for (_, index_info) in indices {
             if let Some(mappings) = index_info.get("mappings") {
-                if let Some(properties) = mappings.get("properties") {
-                    if let Value::Object(props) = properties {
-                        for (field_name, field_def) in props {
-                            if let Value::Object(field_map) = field_def {
-                                let field_type = field_map
-                                    .get("type")
-                                    .and_then(|t| t.as_str())
-                                    .map(|type_str| match type_str {
-                                        "text" => FieldType::Text,
-                                        "keyword" => FieldType::Keyword,
-                                        "integer" | "long" | "short" | "byte" => FieldType::Integer,
-                                        "float" | "double" | "half_float" | "scaled_float" => {
-                                            FieldType::Float
-                                        }
-                                        "boolean" => FieldType::Boolean,
-                                        "date" => FieldType::Date,
-                                        "geo_point" => FieldType::GeoPoint,
-                                        _ => FieldType::Text,
-                                    })
-                                    .unwrap_or(FieldType::Text);
+                if let Some(Value::Object(props)) = mappings.get("properties") {
+                    for (field_name, field_def) in props {
+                        if let Value::Object(field_map) = field_def {
+                            let field_type = field_map
+                                .get("type")
+                                .and_then(|t| t.as_str())
+                                .map(|type_str| match type_str {
+                                    "text" => FieldType::Text,
+                                    "keyword" => FieldType::Keyword,
+                                    "integer" | "long" | "short" | "byte" => FieldType::Integer,
+                                    "float" | "double" | "half_float" | "scaled_float" => {
+                                        FieldType::Float
+                                    }
+                                    "boolean" => FieldType::Boolean,
+                                    "date" => FieldType::Date,
+                                    "geo_point" => FieldType::GeoPoint,
+                                    _ => FieldType::Text,
+                                })
+                                .unwrap_or(FieldType::Text);
 
-                                fields.push(SchemaField {
-                                    name: field_name.clone(),
-                                    field_type,
-                                    required: false,
-                                    facet: field_type == FieldType::Keyword,
-                                    sort: true,
-                                    index: true,
-                                });
-                            }
+                            fields.push(SchemaField {
+                                name: field_name.clone(),
+                                field_type,
+                                required: false,
+                                facet: field_type == FieldType::Keyword,
+                                sort: true,
+                                index: true,
+                            });
                         }
                     }
                 }
