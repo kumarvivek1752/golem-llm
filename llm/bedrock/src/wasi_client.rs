@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::{io::Read, str::FromStr, sync::Arc};
 
 use aws_sdk_bedrockruntime::{config, error::ConnectorError};
 use aws_smithy_runtime_api::{
@@ -82,13 +82,10 @@ impl WasiConnector {
             );
         }
 
-        let mut request = self.0.request(method, url).headers(header_map);
-
-        if let Some(bytes) = parts.body.bytes() {
-            request = request.body(bytes.to_owned());
-        }
-
-        request
+        self.0
+            .request(method, url)
+            .headers(header_map)
+            .body(reqwest::Body::new::<BodyReader>(parts.body.into()))
             .send()
             .await
             .map_err(|e| ConnectorError::other(e.into(), None))
@@ -136,5 +133,32 @@ impl HttpConnector for SharedWasiConnector {
         };
 
         HttpConnectorFuture::new(UnsafeFuture::new(future))
+    }
+}
+
+struct BodyReader {
+    body: SdkBody,
+}
+
+impl From<SdkBody> for BodyReader {
+    fn from(value: SdkBody) -> Self {
+        Self::new(value)
+    }
+}
+
+impl BodyReader {
+    fn new(body: SdkBody) -> Self {
+        Self { body }
+    }
+}
+
+impl Read for BodyReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let bytes = self.body.bytes();
+
+        match bytes {
+            Some(mut bytes) => bytes.read(buf),
+            None => Ok(0),
+        }
     }
 }

@@ -177,15 +177,13 @@ impl WasiSleep {
 }
 
 impl AsyncSleep for WasiSleep {
-    #[allow(clippy::missing_transmute_annotations)]
     fn sleep(&self, duration: std::time::Duration) -> Sleep {
         let reactor = self.reactor.clone();
-
         let fut = async move {
             let nanos = duration.as_nanos() as u64;
             let pollable = monotonic_clock::subscribe_duration(nanos);
 
-            reactor.clone().wait_for(pollable).await;
+            reactor.wait_for(pollable).await;
         };
         Sleep::new(Box::pin(UnsafeFuture::new(fut)))
     }
