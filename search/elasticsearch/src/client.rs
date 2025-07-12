@@ -1,10 +1,8 @@
-use golem_search::golem::search::types::{SearchError, Schema};
+use golem_search::golem::search::types::{SearchError};
 use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::HashMap;
 
-/// Elasticsearch REST API client
 pub struct ElasticsearchApi {
     client: Client,
     base_url: String,
@@ -13,7 +11,6 @@ pub struct ElasticsearchApi {
     password: Option<String>,
 }
 
-/// Elasticsearch index settings for mapping and configuration
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ElasticsearchSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -30,7 +27,6 @@ pub struct ElasticsearchMappings {
     pub dynamic: Option<bool>,
 }
 
-/// Elasticsearch search query structure
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ElasticsearchQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -49,7 +45,6 @@ pub struct ElasticsearchQuery {
     pub _source: Option<Value>,
 }
 
-/// Elasticsearch search response
 #[derive(Debug, Deserialize)]
 pub struct ElasticsearchSearchResponse {
     pub took: u32,
@@ -86,7 +81,6 @@ pub struct ElasticsearchHit {
     pub highlight: Option<Value>,
 }
 
-/// Elasticsearch bulk operation
 #[derive(Debug, Serialize)]
 pub struct ElasticsearchBulkOperation {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -107,7 +101,6 @@ pub struct ElasticsearchBulkAction {
     pub id: String,
 }
 
-/// Elasticsearch bulk response
 #[derive(Debug, Deserialize)]
 pub struct ElasticsearchBulkResponse {
     pub took: u32,
@@ -115,7 +108,6 @@ pub struct ElasticsearchBulkResponse {
     pub items: Vec<Value>,
 }
 
-/// Response for listing indices
 #[derive(Debug, Deserialize)]
 pub struct ElasticsearchIndexInfo {
     pub health: Option<String>,
@@ -134,7 +126,6 @@ pub struct ElasticsearchIndexInfo {
     pub pri_store_size: Option<String>,
 }
 
-/// Error response from Elasticsearch
 #[derive(Debug, Deserialize)]
 pub struct ElasticsearchErrorResponse {
     pub error: ElasticsearchError,
@@ -150,7 +141,6 @@ pub struct ElasticsearchError {
 }
 
 impl ElasticsearchApi {
-    /// Create a new Elasticsearch API client
     pub fn new(base_url: String, username: Option<String>, password: Option<String>, api_key: Option<String>) -> Self {
         Self {
             client: Client::new(),
@@ -161,7 +151,6 @@ impl ElasticsearchApi {
         }
     }
 
-    /// Add authentication headers to request builder
     fn add_auth(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         if let Some(api_key) = &self.api_key {
             builder.header("Authorization", format!("ApiKey {}", api_key))
@@ -172,7 +161,6 @@ impl ElasticsearchApi {
         }
     }
 
-    /// Handle Elasticsearch API errors
     fn handle_error(response: Response) -> SearchError {
         let status = response.status();
         
@@ -184,7 +172,6 @@ impl ElasticsearchApi {
             return SearchError::RateLimited;
         }
         
-        // Try to parse the error response
         if let Ok(error_response) = response.json::<ElasticsearchErrorResponse>() {
             SearchError::Internal(format!("{}: {}", error_response.error.error_type, error_response.error.reason))
         } else {
@@ -192,7 +179,6 @@ impl ElasticsearchApi {
         }
     }
 
-    /// Create an index
     pub fn create_index(&self, index_name: &str, settings: Option<ElasticsearchSettings>) -> Result<(), SearchError> {
         let url = format!("{}/{}", self.base_url, index_name);
         
@@ -212,7 +198,6 @@ impl ElasticsearchApi {
         }
     }
 
-    /// Delete an index
     pub fn delete_index(&self, index_name: &str) -> Result<(), SearchError> {
         let url = format!("{}/{}", self.base_url, index_name);
         
@@ -227,7 +212,6 @@ impl ElasticsearchApi {
         }
     }
 
-    /// List all indices
     pub fn list_indices(&self) -> Result<Vec<ElasticsearchIndexInfo>, SearchError> {
         let url = format!("{}/_cat/indices?format=json", self.base_url);
         
@@ -243,7 +227,6 @@ impl ElasticsearchApi {
         }
     }
 
-    /// Index a single document
     pub fn index_document(&self, index_name: &str, id: &str, document: &Value) -> Result<(), SearchError> {
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
         
@@ -254,7 +237,6 @@ impl ElasticsearchApi {
             .map_err(|e| SearchError::Internal(e.to_string()))?;
         
         if response.status().is_success() {
-            // Refresh the index to make the document immediately searchable
             self.refresh_index(index_name)?;
             Ok(())
         } else {
@@ -262,7 +244,6 @@ impl ElasticsearchApi {
         }
     }
 
-    /// Bulk index documents
     pub fn bulk_index(&self, operations: &str) -> Result<ElasticsearchBulkResponse, SearchError> {
         let url = format!("{}/_bulk", self.base_url);
         
@@ -280,7 +261,6 @@ impl ElasticsearchApi {
         }
     }
 
-    /// Delete a document
     pub fn delete_document(&self, index_name: &str, id: &str) -> Result<(), SearchError> {
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
         
@@ -295,7 +275,6 @@ impl ElasticsearchApi {
         }
     }
 
-    /// Get a document by ID
     pub fn get_document(&self, index_name: &str, id: &str) -> Result<Option<Value>, SearchError> {
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
         
@@ -309,7 +288,6 @@ impl ElasticsearchApi {
             let doc: Value = response.json()
                 .map_err(|e| SearchError::Internal(format!("Failed to parse response: {}", e)))?;
             
-            // Extract the _source field
             if let Some(source) = doc.get("_source") {
                 Ok(Some(source.clone()))
             } else {
@@ -320,7 +298,6 @@ impl ElasticsearchApi {
         }
     }
 
-    /// Search documents
     pub fn search(&self, index_name: &str, query: &ElasticsearchQuery) -> Result<ElasticsearchSearchResponse, SearchError> {
         let url = format!("{}/{}/_search", self.base_url, index_name);
         
@@ -338,7 +315,6 @@ impl ElasticsearchApi {
         }
     }
 
-    /// Get index mappings (schema)
     pub fn get_mappings(&self, index_name: &str) -> Result<Value, SearchError> {
         let url = format!("{}/{}/_mapping", self.base_url, index_name);
         
@@ -354,7 +330,6 @@ impl ElasticsearchApi {
         }
     }
 
-    /// Update index mappings
     pub fn put_mappings(&self, index_name: &str, mappings: &ElasticsearchMappings) -> Result<(), SearchError> {
         let url = format!("{}/{}/_mapping", self.base_url, index_name);
         
@@ -371,7 +346,6 @@ impl ElasticsearchApi {
         }
     }
 
-    /// Refresh an index to make recent changes available for search
     pub fn refresh_index(&self, index_name: &str) -> Result<(), SearchError> {
         let url = format!("{}/{}/_refresh", self.base_url, index_name);
         
@@ -382,7 +356,6 @@ impl ElasticsearchApi {
         if response.status().is_success() {
             Ok(())
         } else {
-            // Don't fail the whole operation if refresh fails
             Ok(())
         }
     }
