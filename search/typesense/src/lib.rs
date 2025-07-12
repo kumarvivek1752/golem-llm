@@ -86,7 +86,6 @@ impl GuestSearchStream for TypesenseSearchStream {
             Ok(response) => {
                 let search_results = typesense_response_to_search_results(response);
                 
-                // Check if we've reached the end
                 let current_page = self.current_page.get();
                 let per_page = self.query.per_page.unwrap_or(20);
                 let total_pages = if let Some(total) = search_results.total {
@@ -100,7 +99,6 @@ impl GuestSearchStream for TypesenseSearchStream {
                     self.finished.set(true);
                 }
 
-                // Prepare for next page
                 self.current_page.set(current_page + 1);
                 
                 let hits = search_results.hits.clone();
@@ -108,7 +106,7 @@ impl GuestSearchStream for TypesenseSearchStream {
                 
                 Some(hits)
             },
-            Err(e) => {
+            Err(_e) => {
                 self.finished.set(true);
                 Some(vec![])
             }
@@ -132,7 +130,6 @@ impl Guest for TypesenseComponent {
         let typesense_schema = schema
             .map(|s| schema_to_typesense_schema(s, &name))
             .unwrap_or_else(|| {
-                // Create a basic schema if none provided
                 CollectionSchema {
                     name: name.clone(),
                     fields: vec![
@@ -157,18 +154,24 @@ impl Guest for TypesenseComponent {
     }
 
     fn delete_index(name: IndexName) -> Result<(), SearchError> {
+        LOGGING_STATE.with_borrow_mut(|state| state.init());
+
         let client = Self::create_client()?;
         client.delete_collection(&name)?;
         Ok(())
     }
 
     fn list_indexes() -> Result<Vec<IndexName>, SearchError> {
+        LOGGING_STATE.with_borrow_mut(|state| state.init());
+
         let client = Self::create_client()?;
         let response = client.list_collections()?;
         Ok(response.0.into_iter().map(|collection| collection.name).collect())
     }
 
     fn upsert(index: IndexName, doc: Doc) -> Result<(), SearchError> {
+        LOGGING_STATE.with_borrow_mut(|state| state.init());
+
         let client = Self::create_client()?;
         let typesense_doc = doc_to_typesense_document(doc)
             .map_err(|e| SearchError::Internal(e))?;
@@ -177,6 +180,8 @@ impl Guest for TypesenseComponent {
     }
 
     fn upsert_many(index: IndexName, docs: Vec<Doc>) -> Result<(), SearchError> {
+        LOGGING_STATE.with_borrow_mut(|state| state.init());
+
         let client = Self::create_client()?;
         let typesense_docs: Result<Vec<_>, _> = docs.iter()
             .map(|doc| doc_to_typesense_document(doc.clone()))
@@ -188,12 +193,16 @@ impl Guest for TypesenseComponent {
     }
 
     fn delete(index: IndexName, id: DocumentId) -> Result<(), SearchError> {
+        LOGGING_STATE.with_borrow_mut(|state| state.init());
+
         let client = Self::create_client()?;
         client.delete_document(&index, &id)?;
         Ok(())
     }
 
     fn delete_many(index: IndexName, ids: Vec<DocumentId>) -> Result<(), SearchError> {
+        LOGGING_STATE.with_borrow_mut(|state| state.init());
+
         let client = Self::create_client()?;
         // Typesense doesn't have bulk delete by IDs, so we use filter_by
         let filter = format!("id:[{}]", ids.join(","));
@@ -202,6 +211,8 @@ impl Guest for TypesenseComponent {
     }
 
     fn get(index: IndexName, id: DocumentId) -> Result<Option<Doc>, SearchError> {
+        LOGGING_STATE.with_borrow_mut(|state| state.init());
+
         let client = Self::create_client()?;
         
         // Typesense doesn't have a direct get document endpoint
@@ -229,6 +240,8 @@ impl Guest for TypesenseComponent {
     }
 
     fn search(index: IndexName, query: SearchQuery) -> Result<SearchResults, SearchError> {
+        LOGGING_STATE.with_borrow_mut(|state| state.init());
+
         let client = Self::create_client()?;
         let typesense_query = search_query_to_typesense_query(query);
         let response = client.search(&index, &typesense_query)?;
@@ -243,7 +256,6 @@ impl Guest for TypesenseComponent {
         let stream = TypesenseSearchStream::new(client, index, query);
         
         
-        // Try-catch equivalent in Rust - let's see if we can capture more details
         let result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             SearchStream::new(stream)
         })) {
@@ -259,7 +271,6 @@ impl Guest for TypesenseComponent {
                     trace!("[DEBUG] Panic message: <unknown>");
                 }
                 
-                // Re-panic to maintain original behavior
                 std::panic::resume_unwind(panic_info);
             }
         };
@@ -291,16 +302,13 @@ impl Guest for TypesenseComponent {
         // We need to delete and recreate the collection
         let client = Self::create_client()?;
         
-        // First check if collection exists
         let collections = client.list_collections()?;
         let exists = collections.0.iter().any(|c| c.name == index);
         
         if exists {
-            // Delete existing collection
             client.delete_collection(&index)?;
         }
         
-        // Create new collection with updated schema
         let typesense_schema = schema_to_typesense_schema(schema, &index);
         client.create_collection(&index, &typesense_schema)?;
         
@@ -316,20 +324,18 @@ impl ExtendedGuest for TypesenseComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
         
         let client = Self::create_client().unwrap_or_else(|e| {
-            // Return a dummy client in case of error, will fail on actual operations
             TypesenseSearchApi::new("dummy".to_string(), "http://localhost:8108".to_string())
         });
                 
-        // Use a simplified query to improve stability
         let simplified_query = SearchQuery {
             q: query.q,
             filters: query.filters,
             sort: query.sort,
             facets: query.facets,
-            page: Some(1), // Always start with page 1
-            per_page: query.per_page.or(Some(20)), // Ensure we have a per_page value
-            offset: None, // Don't use offset for streaming
-            highlight: None, // Skip highlighting for streaming
+            page: Some(1), 
+            per_page: query.per_page.or(Some(20)), 
+            offset: None, 
+            highlight: None, 
             config: query.config,
         };
         
@@ -343,10 +349,7 @@ impl ExtendedGuest for TypesenseComponent {
         
         let mut retry_query = original_query.clone();
         
-        // If we have partial results, we might want to exclude already seen document IDs
-        // or adjust pagination to continue from where we left off
         if !partial_hits.is_empty() {
-            // Adjust offset to skip already received hits
             let current_offset = original_query.offset.unwrap_or(0);
             let received_count = partial_hits.len() as u32;
             retry_query.offset = Some(current_offset + received_count);
