@@ -5,14 +5,11 @@ use crate::golem::search::types::{
 use golem_rust::wasm_rpc::Pollable;
 use std::marker::PhantomData;
 
-/// Wraps a Search implementation with custom durability
 pub struct DurableSearch<Impl> {
     phantom: PhantomData<Impl>,
 }
 
-/// Trait to be implemented in addition to the Search `Guest` trait when wrapping it with `DurableSearch`.
 pub trait ExtendedGuest: Guest + 'static {
-    /// Creates an instance of the Search specific `SearchStream` without wrapping it in a `Resource`
     fn unwrapped_stream(index: IndexName, query: SearchQuery) -> Self::SearchStream;
 
     /// Creates the retry query with the original query and any partial results received.
@@ -24,7 +21,7 @@ pub trait ExtendedGuest: Guest + 'static {
         // If we have partial results, we might want to exclude already seen document IDs
         // or adjust pagination to continue from where we left off
         if !partial_hits.is_empty() {
-            // Adjust offset to skip already received hits
+
             let current_offset = original_query.offset.unwrap_or(0);
             let received_count = partial_hits.len() as u32;
             retry_query.offset = Some(current_offset + received_count);
@@ -98,15 +95,9 @@ mod passthrough_impl {
     }
 }
 
-/// When the durability feature flag is on, wrapping with `DurableSearch` adds custom durability
-/// on top of the provider-specific Search implementation using Golem's special host functions and
-/// the `golem-rust` helper library.
-///
-/// There will be custom durability entries saved in the oplog, with the full Search request and configuration
-/// stored as input, and the full response stored as output. To serialize these in a way it is
-/// observable by oplog consumers, each relevant data type has to be converted to/from `ValueAndType`
-/// which is implemented using the type classes and builder in the `golem-rust` library.
+
 #[cfg(feature = "durability")]
+
 mod durable_impl {
     use crate::durability::{DurableSearch, ExtendedGuest};
     use crate::golem::search::core::{Guest, SearchStream, GuestSearchStream};
@@ -122,7 +113,6 @@ mod durable_impl {
     use std::cell::RefCell;
     use std::fmt::{Display, Formatter};
 
-    // Input types for durability persistence
     #[derive(Debug, Clone, IntoValue)]
     struct CreateIndexInput {
         name: IndexName,
@@ -202,7 +192,6 @@ mod durable_impl {
         }
     }
 
-    // Helper wrapper types for durability to handle Result<T, SearchError> properly
     #[derive(Debug, Clone, FromValueAndType, IntoValue)]
     struct VoidResult;
 
@@ -715,7 +704,7 @@ mod durable_impl {
 
         #[test]
         fn search_error_roundtrip() {
-            // Basic test for SearchError
+
             let error = SearchError::IndexNotFound;
             assert!(matches!(error, SearchError::IndexNotFound));
         }
