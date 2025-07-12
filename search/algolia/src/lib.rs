@@ -1,18 +1,18 @@
-use crate::client::{AlgoliaSearchApi};
+use crate::client::AlgoliaSearchApi;
 use crate::conversions::{
-    doc_to_algolia_object, algolia_object_to_doc, search_query_to_algolia_query,
-    algolia_response_to_search_results, schema_to_algolia_settings, algolia_settings_to_schema,
-    create_retry_query,
+    algolia_object_to_doc, algolia_response_to_search_results, algolia_settings_to_schema,
+    create_retry_query, doc_to_algolia_object, schema_to_algolia_settings,
+    search_query_to_algolia_query,
 };
-use golem_search::golem::search::core::{Guest, SearchStream, GuestSearchStream};
-use golem_search::golem::search::types::{
-    IndexName, DocumentId, Doc, SearchQuery, SearchResults, SearchHit, Schema, SearchError
-};
+use golem_rust::wasm_rpc::Pollable;
 use golem_search::config::with_config_keys;
 use golem_search::durability::{DurableSearch, ExtendedGuest};
+use golem_search::golem::search::core::{Guest, GuestSearchStream, SearchStream};
+use golem_search::golem::search::types::{
+    Doc, DocumentId, IndexName, Schema, SearchError, SearchHit, SearchQuery, SearchResults,
+};
 use golem_search::LOGGING_STATE;
-use golem_rust::wasm_rpc::Pollable;
-use std::cell::{RefCell, Cell};
+use std::cell::{Cell, RefCell};
 
 mod client;
 mod conversions;
@@ -31,7 +31,7 @@ impl AlgoliaSearchStream {
         Self {
             client,
             index_name,
-            query:query.clone(),
+            query: query.clone(),
             current_page: Cell::new(query.page.unwrap_or(0)),
             finished: Cell::new(false),
             last_response: RefCell::new(None),
@@ -53,14 +53,16 @@ impl GuestSearchStream for AlgoliaSearchStream {
         search_query.page = Some(self.current_page.get());
 
         let algolia_query = search_query_to_algolia_query(search_query);
-        
+
         match self.client.search(&self.index_name, &algolia_query) {
             Ok(response) => {
                 let search_results = algolia_response_to_search_results(response);
-                
+
                 let current_page = self.current_page.get();
-                let total_pages = if let (Some(total), Some(per_page)) = (search_results.total, search_results.per_page) {
-                    (total + per_page - 1) / per_page 
+                let total_pages = if let (Some(total), Some(per_page)) =
+                    (search_results.total, search_results.per_page)
+                {
+                    total.div_ceil(per_page)
                 } else {
                     current_page + 1
                 };
@@ -70,10 +72,10 @@ impl GuestSearchStream for AlgoliaSearchStream {
                 }
 
                 self.current_page.set(current_page + 1);
-                
+
                 let hits = search_results.hits.clone();
                 *self.last_response.borrow_mut() = Some(search_results);
-                
+
                 Some(hits)
             }
             Err(_) => {
@@ -99,14 +101,16 @@ impl AlgoliaComponent {
             &[Self::APPLICATION_ID_ENV_VAR, Self::API_KEY_ENV_VAR],
             |keys| {
                 if keys.len() != 2 {
-                    return Err(SearchError::Internal("Missing Algolia credentials".to_string()));
+                    return Err(SearchError::Internal(
+                        "Missing Algolia credentials".to_string(),
+                    ));
                 }
-                
+
                 let application_id = keys[0].clone();
                 let api_key = keys[1].clone();
-                
+
                 Ok(AlgoliaSearchApi::new(application_id, api_key))
-            }
+            },
         )
     }
 }
@@ -127,12 +131,12 @@ impl Guest for AlgoliaComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        
+
         match client.delete_index(&name) {
             Ok(response) => {
                 let _ = response;
                 Ok(())
-            },
+            }
             Err(e) => Err(e),
         }
     }
@@ -141,7 +145,7 @@ impl Guest for AlgoliaComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        
+
         match client.list_indexes() {
             Ok(response) => Ok(response.items.into_iter().map(|item| item.name).collect()),
             Err(e) => Err(e),
@@ -152,14 +156,13 @@ impl Guest for AlgoliaComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        let algolia_object = doc_to_algolia_object(doc)
-            .map_err(|e| SearchError::InvalidQuery(e))?;
-        
+        let algolia_object = doc_to_algolia_object(doc).map_err(SearchError::InvalidQuery)?;
+
         match client.save_object(&index, &algolia_object) {
             Ok(response) => {
                 let _ = response;
                 Ok(())
-            },
+            }
             Err(e) => Err(e),
         }
     }
@@ -169,18 +172,17 @@ impl Guest for AlgoliaComponent {
 
         let client = Self::create_client()?;
         let mut algolia_objects = Vec::new();
-        
+
         for doc in docs {
-            let algolia_object = doc_to_algolia_object(doc)
-                .map_err(|e| SearchError::InvalidQuery(e))?;
+            let algolia_object = doc_to_algolia_object(doc).map_err(SearchError::InvalidQuery)?;
             algolia_objects.push(algolia_object);
         }
-        
+
         match client.save_objects(&index, &algolia_objects) {
             Ok(response) => {
                 let _ = response;
                 Ok(())
-            },
+            }
             Err(e) => Err(e),
         }
     }
@@ -189,12 +191,12 @@ impl Guest for AlgoliaComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        
+
         match client.delete_object(&index, &id) {
             Ok(response) => {
                 let _ = response;
                 Ok(())
-            },
+            }
             Err(e) => Err(e),
         }
     }
@@ -203,12 +205,12 @@ impl Guest for AlgoliaComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        
+
         match client.delete_objects(&index, &ids) {
             Ok(response) => {
                 let _ = response;
                 Ok(())
-            },
+            }
             Err(e) => Err(e),
         }
     }
@@ -217,7 +219,7 @@ impl Guest for AlgoliaComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        
+
         match client.get_object(&index, &id) {
             Ok(Some(algolia_object)) => Ok(Some(algolia_object_to_doc(algolia_object))),
             Ok(None) => Ok(None),
@@ -230,7 +232,7 @@ impl Guest for AlgoliaComponent {
 
         let client = Self::create_client()?;
         let algolia_query = search_query_to_algolia_query(query);
-        
+
         match client.search(&index, &algolia_query) {
             Ok(response) => Ok(algolia_response_to_search_results(response)),
             Err(e) => Err(e),
@@ -249,38 +251,32 @@ impl Guest for AlgoliaComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        
+
         match client.get_settings(&index) {
             Ok(settings) => Ok(algolia_settings_to_schema(settings)),
             Err(e) => Err(e),
         }
     }
 
-   fn update_schema(index: IndexName, schema: Schema) -> Result<(), SearchError> {
-    LOGGING_STATE.with_borrow_mut(|state| state.init());
+    fn update_schema(index: IndexName, schema: Schema) -> Result<(), SearchError> {
+        LOGGING_STATE.with_borrow_mut(|state| state.init());
 
-    let client = Self::create_client()?;
-    let settings = schema_to_algolia_settings(schema);
+        let client = Self::create_client()?;
+        let settings = schema_to_algolia_settings(schema);
 
-    client
-        .set_settings(&index, &settings)
-        .map_err(|e| {
-            e
-        })?;
+        client.set_settings(&index, &settings)?;
 
-    Ok(())
-}
-
+        Ok(())
+    }
 }
 
 impl ExtendedGuest for AlgoliaComponent {
     fn unwrapped_stream(index: IndexName, query: SearchQuery) -> Self::SearchStream {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
-        let client = Self::create_client().unwrap_or_else(|_| {
-            AlgoliaSearchApi::new("dummy".to_string(), "dummy".to_string())
-        });
-        
+        let client = Self::create_client()
+            .unwrap_or_else(|_| AlgoliaSearchApi::new("dummy".to_string(), "dummy".to_string()));
+
         AlgoliaSearchStream::new(client, index, query)
     }
 

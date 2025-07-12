@@ -1,7 +1,5 @@
 use crate::golem::search::core::Guest;
-use crate::golem::search::types::{
-    IndexName, SearchQuery, SearchHit
-};
+use crate::golem::search::types::{IndexName, SearchHit, SearchQuery};
 use golem_rust::wasm_rpc::Pollable;
 use std::marker::PhantomData;
 
@@ -17,16 +15,15 @@ pub trait ExtendedGuest: Guest + 'static {
     /// queries if needed.
     fn retry_query(original_query: &SearchQuery, partial_hits: &[SearchHit]) -> SearchQuery {
         let mut retry_query = original_query.clone();
-        
+
         // If we have partial results, we might want to exclude already seen document IDs
         // or adjust pagination to continue from where we left off
         if !partial_hits.is_empty() {
-
             let current_offset = original_query.offset.unwrap_or(0);
             let received_count = partial_hits.len() as u32;
             retry_query.offset = Some(current_offset + received_count);
         }
-        
+
         retry_query
     }
 
@@ -39,7 +36,7 @@ mod passthrough_impl {
     use crate::durability::{DurableSearch, ExtendedGuest};
     use crate::golem::search::core::{Guest, SearchStream};
     use crate::golem::search::types::{
-        IndexName, DocumentId, Doc, SearchQuery, SearchResults, Schema, SearchError
+        Doc, DocumentId, IndexName, Schema, SearchError, SearchQuery, SearchResults,
     };
 
     impl<Impl: ExtendedGuest> Guest for DurableSearch<Impl> {
@@ -81,7 +78,10 @@ mod passthrough_impl {
             Impl::search(index, query)
         }
 
-        fn stream_search(index: IndexName, query: SearchQuery) -> Result<SearchStream, SearchError> {
+        fn stream_search(
+            index: IndexName,
+            query: SearchQuery,
+        ) -> Result<SearchStream, SearchError> {
             Impl::stream_search(index, query)
         }
 
@@ -95,14 +95,12 @@ mod passthrough_impl {
     }
 }
 
-
 #[cfg(feature = "durability")]
-
 mod durable_impl {
     use crate::durability::{DurableSearch, ExtendedGuest};
-    use crate::golem::search::core::{Guest, SearchStream, GuestSearchStream};
+    use crate::golem::search::core::{Guest, GuestSearchStream, SearchStream};
     use crate::golem::search::types::{
-        IndexName, DocumentId, Doc, SearchQuery, SearchResults, SearchHit, Schema, SearchError
+        Doc, DocumentId, IndexName, Schema, SearchError, SearchHit, SearchQuery, SearchResults,
     };
     use golem_rust::bindings::golem::durability::durability::{
         DurableFunctionType, LazyInitializedPollable,
@@ -230,7 +228,8 @@ mod durable_impl {
                 });
                 match result {
                     Ok(()) => {
-                        let _ = durability.persist_infallible(CreateIndexInput { name, schema }, VoidResult);
+                        let _ = durability
+                            .persist_infallible(CreateIndexInput { name, schema }, VoidResult);
                         Ok(())
                     }
                     Err(e) => Err(e),
@@ -253,7 +252,8 @@ mod durable_impl {
                 });
                 match result {
                     Ok(()) => {
-                        let _ = durability.persist_infallible(DeleteIndexInput { name }, VoidResult);
+                        let _ =
+                            durability.persist_infallible(DeleteIndexInput { name }, VoidResult);
                         Ok(())
                     }
                     Err(e) => Err(e),
@@ -276,7 +276,12 @@ mod durable_impl {
                 });
                 match result {
                     Ok(names) => {
-                        let _ = durability.persist_infallible(NoInput, IndexNamesResult { names: names.clone() });
+                        let _ = durability.persist_infallible(
+                            NoInput,
+                            IndexNamesResult {
+                                names: names.clone(),
+                            },
+                        );
                         Ok(names)
                     }
                     Err(e) => Err(e),
@@ -299,7 +304,8 @@ mod durable_impl {
                 });
                 match result {
                     Ok(()) => {
-                        let _ = durability.persist_infallible(UpsertInput { index, doc }, VoidResult);
+                        let _ =
+                            durability.persist_infallible(UpsertInput { index, doc }, VoidResult);
                         Ok(())
                     }
                     Err(e) => Err(e),
@@ -322,7 +328,8 @@ mod durable_impl {
                 });
                 match result {
                     Ok(()) => {
-                        let _ = durability.persist_infallible(UpsertManyInput { index, docs }, VoidResult);
+                        let _ = durability
+                            .persist_infallible(UpsertManyInput { index, docs }, VoidResult);
                         Ok(())
                     }
                     Err(e) => Err(e),
@@ -345,7 +352,8 @@ mod durable_impl {
                 });
                 match result {
                     Ok(()) => {
-                        let _ = durability.persist_infallible(DeleteInput { index, id }, VoidResult);
+                        let _ =
+                            durability.persist_infallible(DeleteInput { index, id }, VoidResult);
                         Ok(())
                     }
                     Err(e) => Err(e),
@@ -368,7 +376,8 @@ mod durable_impl {
                 });
                 match result {
                     Ok(()) => {
-                        let _ = durability.persist_infallible(DeleteManyInput { index, ids }, VoidResult);
+                        let _ = durability
+                            .persist_infallible(DeleteManyInput { index, ids }, VoidResult);
                         Ok(())
                     }
                     Err(e) => Err(e),
@@ -391,7 +400,10 @@ mod durable_impl {
                 });
                 match result {
                     Ok(doc) => {
-                        let _ = durability.persist_infallible(GetInput { index, id }, OptionalDocResult { doc: doc.clone() });
+                        let _ = durability.persist_infallible(
+                            GetInput { index, id },
+                            OptionalDocResult { doc: doc.clone() },
+                        );
                         Ok(doc)
                     }
                     Err(e) => Err(e),
@@ -414,7 +426,12 @@ mod durable_impl {
                 });
                 match result {
                     Ok(results) => {
-                        let _ = durability.persist_infallible(SearchInput { index, query }, SearchResultsWrapper { results: results.clone() });
+                        let _ = durability.persist_infallible(
+                            SearchInput { index, query },
+                            SearchResultsWrapper {
+                                results: results.clone(),
+                            },
+                        );
                         Ok(results)
                     }
                     Err(e) => Err(e),
@@ -425,7 +442,10 @@ mod durable_impl {
             }
         }
 
-        fn stream_search(index: IndexName, query: SearchQuery) -> Result<SearchStream, SearchError> {
+        fn stream_search(
+            index: IndexName,
+            query: SearchQuery,
+        ) -> Result<SearchStream, SearchError> {
             let durability = Durability::<NoOutput, UnusedError>::new(
                 "golem_search",
                 "stream_search",
@@ -442,7 +462,9 @@ mod durable_impl {
                 Ok(result)
             } else {
                 let _: NoOutput = durability.replay_infallible();
-                Ok(SearchStream::new(DurableSearchStream::<Impl>::replay(index, query)))
+                Ok(SearchStream::new(DurableSearchStream::<Impl>::replay(
+                    index, query,
+                )))
             }
         }
 
@@ -458,7 +480,12 @@ mod durable_impl {
                 });
                 match result {
                     Ok(schema) => {
-                        let _ = durability.persist_infallible(GetSchemaInput { index }, SchemaWrapper { schema: schema.clone() });
+                        let _ = durability.persist_infallible(
+                            GetSchemaInput { index },
+                            SchemaWrapper {
+                                schema: schema.clone(),
+                            },
+                        );
                         Ok(schema)
                     }
                     Err(e) => Err(e),
@@ -481,7 +508,8 @@ mod durable_impl {
                 });
                 match result {
                     Ok(()) => {
-                        let _ = durability.persist_infallible(UpdateSchemaInput { index, schema }, VoidResult);
+                        let _ = durability
+                            .persist_infallible(UpdateSchemaInput { index, schema }, VoidResult);
                         Ok(())
                     }
                     Err(e) => Err(e),
@@ -512,7 +540,7 @@ mod durable_impl {
         },
         Replay {
             index: IndexName,
-            query: SearchQuery,
+            query: Box<SearchQuery>,
             pollables: Vec<LazyInitializedPollable>,
             partial_result: Vec<SearchHit>,
             finished: bool,
@@ -539,7 +567,7 @@ mod durable_impl {
             Self {
                 state: RefCell::new(Some(DurableSearchStreamState::Replay {
                     index,
-                    query,
+                    query: Box::new(query),
                     pollables: Vec::new(),
                     partial_result: Vec::new(),
                     finished: false,
@@ -613,8 +641,7 @@ mod durable_impl {
                         if *finished {
                             (None, None)
                         } else {
-                            let extended_query =
-                                Impl::retry_query(query, partial_result);
+                            let extended_query = Impl::retry_query(query, partial_result);
 
                             let (stream, first_live_result) =
                                 with_persistence_level(PersistenceLevel::PersistNothing, || {
@@ -704,7 +731,6 @@ mod durable_impl {
 
         #[test]
         fn search_error_roundtrip() {
-
             let error = SearchError::IndexNotFound;
             assert!(matches!(error, SearchError::IndexNotFound));
         }

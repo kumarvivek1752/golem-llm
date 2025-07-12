@@ -1,7 +1,7 @@
-use golem_search::error::{internal_error, search_error_from_status, from_reqwest_error};
+use golem_search::error::{from_reqwest_error, internal_error, search_error_from_status};
 use golem_search::golem::search::types::SearchError;
 use log::trace;
-use reqwest::{Client, RequestBuilder, Method, Response};
+use reqwest::{Client, Method, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -17,19 +17,54 @@ where
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct IndexSettings {
-    #[serde(skip_serializing_if = "Vec::is_empty", rename = "searchableAttributes", deserialize_with = "deserialize_nullable_vec", default)]
+    #[serde(
+        skip_serializing_if = "Vec::is_empty",
+        rename = "searchableAttributes",
+        deserialize_with = "deserialize_nullable_vec",
+        default
+    )]
     pub searchable_attributes: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty", rename = "attributesForFaceting", deserialize_with = "deserialize_nullable_vec", default)]
+    #[serde(
+        skip_serializing_if = "Vec::is_empty",
+        rename = "attributesForFaceting",
+        deserialize_with = "deserialize_nullable_vec",
+        default
+    )]
     pub attributes_for_faceting: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty", rename = "unretrievableAttributes", deserialize_with = "deserialize_nullable_vec", default)]
+    #[serde(
+        skip_serializing_if = "Vec::is_empty",
+        rename = "unretrievableAttributes",
+        deserialize_with = "deserialize_nullable_vec",
+        default
+    )]
     pub unretrievable_attributes: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty", rename = "attributesToRetrieve", deserialize_with = "deserialize_nullable_vec", default)]
+    #[serde(
+        skip_serializing_if = "Vec::is_empty",
+        rename = "attributesToRetrieve",
+        deserialize_with = "deserialize_nullable_vec",
+        default
+    )]
     pub attributes_to_retrieve: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty", rename = "ranking", deserialize_with = "deserialize_nullable_vec", default)]
+    #[serde(
+        skip_serializing_if = "Vec::is_empty",
+        rename = "ranking",
+        deserialize_with = "deserialize_nullable_vec",
+        default
+    )]
     pub ranking: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty", rename = "customRanking", deserialize_with = "deserialize_nullable_vec", default)]
+    #[serde(
+        skip_serializing_if = "Vec::is_empty",
+        rename = "customRanking",
+        deserialize_with = "deserialize_nullable_vec",
+        default
+    )]
     pub custom_ranking: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty", rename = "replicas", deserialize_with = "deserialize_nullable_vec", default)]
+    #[serde(
+        skip_serializing_if = "Vec::is_empty",
+        rename = "replicas",
+        deserialize_with = "deserialize_nullable_vec",
+        default
+    )]
     pub replicas: Vec<String>,
 }
 
@@ -50,10 +85,7 @@ impl AlgoliaSearchApi {
             .build()
             .expect("Failed to initialize HTTP client");
 
-        let search_url = format!(
-            "https://{}.algolia.net",
-            application_id.to_lowercase()
-        );
+        let search_url = format!("https://{}.algolia.net", application_id.to_lowercase());
         let write_url = format!("https://{}.algolia.net", application_id.to_lowercase());
 
         Self {
@@ -65,7 +97,7 @@ impl AlgoliaSearchApi {
         }
     }
 
-    fn create_request(&self, method: Method, url: &str) -> RequestBuilder  {
+    fn create_request(&self, method: Method, url: &str) -> RequestBuilder {
         self.client
             .request(method, url)
             .header("X-Algolia-Application-Id", &self.application_id)
@@ -108,7 +140,8 @@ impl AlgoliaSearchApi {
 
         let url = format!("{}/1/indexes/{}", self.write_url, index_name);
 
-        let response = self.create_request(Method::POST, &url)
+        let response = self
+            .create_request(Method::POST, &url)
             .json(object)
             .send()
             .map_err(|e| internal_error(format!("Failed to save object: {}", e)))?;
@@ -134,7 +167,8 @@ impl AlgoliaSearchApi {
                 .collect(),
         };
 
-        let response = self.create_request(Method::POST, &url)
+        let response = self
+            .create_request(Method::POST, &url)
             .json(&batch_request)
             .send()
             .map_err(|e| internal_error(format!("Failed to save objects: {}", e)))?;
@@ -183,7 +217,8 @@ impl AlgoliaSearchApi {
                 .collect(),
         };
 
-        let response = self.create_request(Method::POST, &url)
+        let response = self
+            .create_request(Method::POST, &url)
             .json(&batch_request)
             .send()
             .map_err(|e| internal_error(format!("Failed to delete objects: {}", e)))?;
@@ -224,9 +259,7 @@ impl AlgoliaSearchApi {
 
         let url = format!("{}/1/indexes/{}/query", self.search_url, index_name);
 
-        let response = self.create_request(Method::POST, &url)
-            .json(query)
-            .send();
+        let response = self.create_request(Method::POST, &url).json(query).send();
 
         match response {
             Ok(resp) => parse_response(resp),
@@ -251,22 +284,22 @@ impl AlgoliaSearchApi {
     }
 
     pub fn set_settings(
-    &self,
-    index_name: &str,
-    settings: &IndexSettings,
-) -> Result<SetSettingsResponse, SearchError> {
-    trace!("Setting settings for index: {index_name}");
+        &self,
+        index_name: &str,
+        settings: &IndexSettings,
+    ) -> Result<SetSettingsResponse, SearchError> {
+        trace!("Setting settings for index: {index_name}");
 
-    let url = format!("{}/1/indexes/{}/settings", self.write_url, index_name);
+        let url = format!("{}/1/indexes/{}/settings", self.write_url, index_name);
 
-    let response = self
-        .create_request(Method::PUT, &url)
-        .json(settings)
-        .send()
-        .map_err(|e| internal_error(format!("Failed to set settings: {}", e)))?;
+        let response = self
+            .create_request(Method::PUT, &url)
+            .json(settings)
+            .send()
+            .map_err(|e| internal_error(format!("Failed to set settings: {}", e)))?;
 
-    parse_response(response)
- }
+        parse_response(response)
+    }
 
     pub fn _wait_for_task(&self, index_name: &str, task_id: u64) -> Result<(), SearchError> {
         trace!("Waiting for task {task_id} on index {index_name}");
@@ -481,7 +514,6 @@ pub struct SetSettingsResponse {
     pub task_id: u64,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchRequest {
     pub requests: Vec<BatchOperation>,
@@ -498,7 +530,6 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, 
 
     trace!("Received response from Algolia API: {response:?}");
 
-    
     if status.is_success() {
         let body = response
             .json::<T>()
@@ -512,7 +543,7 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, 
             .text()
             .map_err(|err| from_reqwest_error("Failed to receive error response body", err))?;
 
-       trace!("Received {status} response from xAI API: {error_body:?}");
+        trace!("Received {status} response from xAI API: {error_body:?}");
 
         Err(search_error_from_status(status))
     }

@@ -1,4 +1,4 @@
-use crate::golem::search::types::{SearchError};
+use crate::golem::search::types::SearchError;
 use reqwest::StatusCode;
 
 pub fn unsupported(_what: impl AsRef<str>) -> SearchError {

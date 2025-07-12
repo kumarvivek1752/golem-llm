@@ -1,18 +1,18 @@
 use crate::client::MeilisearchApi;
 use crate::conversions::{
-    doc_to_meilisearch_document, meilisearch_document_to_doc, search_query_to_meilisearch_request,
-    meilisearch_response_to_search_results, schema_to_meilisearch_settings, meilisearch_settings_to_schema,
-    create_retry_query,
+    create_retry_query, doc_to_meilisearch_document, meilisearch_document_to_doc,
+    meilisearch_response_to_search_results, meilisearch_settings_to_schema,
+    schema_to_meilisearch_settings, search_query_to_meilisearch_request,
 };
-use golem_search::golem::search::core::{Guest, SearchStream, GuestSearchStream};
-use golem_search::golem::search::types::{
-    IndexName, DocumentId, Doc, SearchQuery, SearchResults, SearchHit, Schema, SearchError
-};
+use golem_rust::wasm_rpc::Pollable;
 use golem_search::config::with_config_keys;
 use golem_search::durability::{DurableSearch, ExtendedGuest};
+use golem_search::golem::search::core::{Guest, GuestSearchStream, SearchStream};
+use golem_search::golem::search::types::{
+    Doc, DocumentId, IndexName, Schema, SearchError, SearchHit, SearchQuery, SearchResults,
+};
 use golem_search::LOGGING_STATE;
-use golem_rust::wasm_rpc::Pollable;
-use std::cell::{RefCell, Cell};
+use std::cell::{Cell, RefCell};
 
 mod client;
 mod conversions;
@@ -41,7 +41,6 @@ impl MeilisearchSearchStream {
     }
 
     pub fn subscribe(&self) -> Pollable {
-
         golem_rust::bindings::wasi::clocks::monotonic_clock::subscribe_duration(0)
     }
 }
@@ -55,25 +54,23 @@ impl GuestSearchStream for MeilisearchSearchStream {
         let mut search_query = self.query.clone();
         let current_page = self.current_page.get();
         let limit = search_query.per_page.unwrap_or(20);
-        
 
         search_query.offset = Some(current_page * limit);
 
         let meilisearch_request = search_query_to_meilisearch_request(search_query);
-        
+
         match self.client.search(&self.index_name, &meilisearch_request) {
             Ok(response) => {
                 let search_results = meilisearch_response_to_search_results(response);
-                
 
                 if search_results.hits.is_empty() {
                     self.finished.set(true);
                     return Some(vec![]);
                 }
 
-
-                if let (Some(total), Some(per_page)) = 
-                    (search_results.total, search_results.per_page) {
+                if let (Some(total), Some(per_page)) =
+                    (search_results.total, search_results.per_page)
+                {
                     let current_offset = current_page * per_page;
                     let next_offset = current_offset + per_page;
                     if next_offset >= total {
@@ -81,17 +78,15 @@ impl GuestSearchStream for MeilisearchSearchStream {
                     }
                 }
 
-
                 if (search_results.hits.len() as u32) < limit {
                     self.finished.set(true);
                 }
 
-
                 self.current_page.set(current_page + 1);
-                
+
                 let hits = search_results.hits.clone();
                 *self.last_response.borrow_mut() = Some(search_results);
-                
+
                 Some(hits)
             }
             Err(_) => {
@@ -113,21 +108,19 @@ impl MeilisearchComponent {
     const API_KEY_ENV_VAR: &'static str = "MEILISEARCH_API_KEY";
 
     fn create_client() -> Result<MeilisearchApi, SearchError> {
-        with_config_keys(
-            &[Self::BASE_URL_ENV_VAR],
-            |keys| {
-                if keys.is_empty() {
-                    return Err(SearchError::Internal("Missing Meilisearch base URL".to_string()));
-                }
-                
-                let base_url = keys[0].clone();
-                
-
-                let api_key = std::env::var(Self::API_KEY_ENV_VAR).ok();
-                
-                Ok(MeilisearchApi::new(base_url, api_key))
+        with_config_keys(&[Self::BASE_URL_ENV_VAR], |keys| {
+            if keys.is_empty() {
+                return Err(SearchError::Internal(
+                    "Missing Meilisearch base URL".to_string(),
+                ));
             }
-        )
+
+            let base_url = keys[0].clone();
+
+            let api_key = std::env::var(Self::API_KEY_ENV_VAR).ok();
+
+            Ok(MeilisearchApi::new(base_url, api_key))
+        })
     }
 }
 
@@ -138,22 +131,22 @@ impl Guest for MeilisearchComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        
+
         let create_request = client::MeilisearchCreateIndexRequest {
             uid: name.clone(),
             primary_key: Some("id".to_string()), // Default primary key
         };
-        
+
         let task = client.create_index(&create_request)?;
-        
+
         client.wait_for_task(task.task_uid)?;
-        
+
         if let Some(schema) = schema {
             let settings = schema_to_meilisearch_settings(schema);
             let settings_task = client.update_settings(&name, &settings)?;
             client.wait_for_task(settings_task.task_uid)?;
         }
-        
+
         Ok(())
     }
 
@@ -161,10 +154,10 @@ impl Guest for MeilisearchComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        
+
         let task = client.delete_index(&name)?;
         client.wait_for_task(task.task_uid)?;
-        
+
         Ok(())
     }
 
@@ -172,21 +165,25 @@ impl Guest for MeilisearchComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        
+
         let response = client.list_indexes()?;
-        Ok(response.results.into_iter().map(|index| index.task_uid).collect())
+        Ok(response
+            .results
+            .into_iter()
+            .map(|index| index.task_uid)
+            .collect())
     }
 
     fn upsert(index: IndexName, doc: Doc) -> Result<(), SearchError> {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        let meilisearch_doc = doc_to_meilisearch_document(doc)
-            .map_err(|e| SearchError::InvalidQuery(e))?;
-        
+        let meilisearch_doc =
+            doc_to_meilisearch_document(doc).map_err(SearchError::InvalidQuery)?;
+
         let task = client.add_documents(&index, &[meilisearch_doc])?;
         client.wait_for_task(task.task_uid)?;
-        
+
         Ok(())
     }
 
@@ -195,16 +192,16 @@ impl Guest for MeilisearchComponent {
 
         let client = Self::create_client()?;
         let mut meilisearch_docs = Vec::new();
-        
+
         for doc in docs {
-            let meilisearch_doc = doc_to_meilisearch_document(doc)
-                .map_err(|e| SearchError::InvalidQuery(e))?;
+            let meilisearch_doc =
+                doc_to_meilisearch_document(doc).map_err(SearchError::InvalidQuery)?;
             meilisearch_docs.push(meilisearch_doc);
         }
-        
+
         let task = client.add_documents(&index, &meilisearch_docs)?;
         client.wait_for_task(task.task_uid)?;
-        
+
         Ok(())
     }
 
@@ -212,10 +209,10 @@ impl Guest for MeilisearchComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        
+
         let task = client.delete_document(&index, &id)?;
         client.wait_for_task(task.task_uid)?;
-        
+
         Ok(())
     }
 
@@ -223,10 +220,10 @@ impl Guest for MeilisearchComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        
+
         let task = client.delete_documents(&index, &ids)?;
         client.wait_for_task(task.task_uid)?;
-        
+
         Ok(())
     }
 
@@ -234,7 +231,7 @@ impl Guest for MeilisearchComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        
+
         match client.get_document(&index, &id)? {
             Some(meilisearch_doc) => Ok(Some(meilisearch_document_to_doc(meilisearch_doc))),
             None => Ok(None),
@@ -246,7 +243,7 @@ impl Guest for MeilisearchComponent {
 
         let client = Self::create_client()?;
         let meilisearch_request = search_query_to_meilisearch_request(query);
-        
+
         let response = client.search(&index, &meilisearch_request)?;
         Ok(meilisearch_response_to_search_results(response))
     }
@@ -263,7 +260,7 @@ impl Guest for MeilisearchComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        
+
         let settings = client.get_settings(&index)?;
         Ok(meilisearch_settings_to_schema(settings))
     }
@@ -273,9 +270,9 @@ impl Guest for MeilisearchComponent {
 
         let client = Self::create_client()?;
         let settings = schema_to_meilisearch_settings(schema);
-        
+
         let _task = client.update_settings(&index, &settings)?;
-        
+
         Ok(())
     }
 }
@@ -284,11 +281,9 @@ impl ExtendedGuest for MeilisearchComponent {
     fn unwrapped_stream(index: IndexName, query: SearchQuery) -> Self::SearchStream {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
-        let client = Self::create_client().unwrap_or_else(|_| {
+        let client = Self::create_client()
+            .unwrap_or_else(|_| MeilisearchApi::new("http://localhost:7700".to_string(), None));
 
-            MeilisearchApi::new("http://localhost:7700".to_string(), None)
-        });
-        
         MeilisearchSearchStream::new(client, index, query)
     }
 

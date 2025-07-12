@@ -29,10 +29,7 @@ pub fn validate_config_key(key: impl AsRef<OsStr>) -> Result<String, SearchError
     std::env::var(key).map_err(|_| SearchError::Internal(format!("Missing config key: {key_str}")))
 }
 
-pub fn with_config_keys<R>(
-    keys: &[&str],
-    callback: impl FnOnce(Vec<String>) -> R,
-) -> R {
+pub fn with_config_keys<R>(keys: &[&str], callback: impl FnOnce(Vec<String>) -> R) -> R {
     let mut values = Vec::new();
     for key in keys {
         match std::env::var(key) {

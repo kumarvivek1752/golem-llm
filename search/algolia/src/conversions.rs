@@ -1,6 +1,9 @@
-use crate::client::{AlgoliaObject, SearchQuery as AlgoliaSearchQuery, SearchResponse, SearchHit as AlgoliaSearchHit, IndexSettings};
+use crate::client::{
+    AlgoliaObject, IndexSettings, SearchHit as AlgoliaSearchHit, SearchQuery as AlgoliaSearchQuery,
+    SearchResponse,
+};
 use golem_search::golem::search::types::{
-    Doc, SearchQuery, SearchResults, SearchHit, Schema, SchemaField, FieldType
+    Doc, FieldType, Schema, SchemaField, SearchHit, SearchQuery, SearchResults,
 };
 use serde_json::{Map, Value};
 
@@ -63,7 +66,6 @@ pub fn search_query_to_algolia_query(query: SearchQuery) -> AlgoliaSearchQuery {
 
         if let Some(provider_params) = config.provider_params {
             if let Ok(params_map) = serde_json::from_str::<Map<String, Value>>(&provider_params) {
-
                 if let Some(filters) = params_map.get("filters").and_then(|v| v.as_str()) {
                     algolia_query.filters = Some(filters.to_string());
                 }
@@ -81,25 +83,30 @@ pub fn search_query_to_algolia_query(query: SearchQuery) -> AlgoliaSearchQuery {
 }
 
 pub fn algolia_response_to_search_results(response: SearchResponse) -> SearchResults {
-    let hits = response.hits.into_iter().map(algolia_hit_to_search_hit).collect();
+    let hits = response
+        .hits
+        .into_iter()
+        .map(algolia_hit_to_search_hit)
+        .collect();
 
     SearchResults {
         total: Some(response.nb_hits),
         page: Some(response.page),
         per_page: Some(response.hits_per_page),
         hits,
-        facets: response.facets.map(|f| serde_json::to_string(&f).unwrap_or_default()),
+        facets: response
+            .facets
+            .map(|f| serde_json::to_string(&f).unwrap_or_default()),
         took_ms: Some(response.processing_time_ms),
     }
 }
 
 pub fn algolia_hit_to_search_hit(hit: AlgoliaSearchHit) -> SearchHit {
-    let highlights = hit.highlight_result
+    let highlights = hit
+        .highlight_result
         .map(|h| serde_json::to_string(&h).unwrap_or_default());
 
-    let score = hit.ranking_info
-        .as_ref()
-        .map(|info| info.user_score as f64);
+    let score = hit.ranking_info.as_ref().map(|info| info.user_score as f64);
 
     SearchHit {
         id: hit.object_id,
@@ -119,7 +126,9 @@ pub fn schema_to_algolia_settings(schema: Schema) -> IndexSettings {
                     settings.searchable_attributes.push(field.name.clone());
                 }
                 if field.facet {
-                    settings.attributes_for_faceting.push(format!("filterOnly({})", field.name));
+                    settings
+                        .attributes_for_faceting
+                        .push(format!("filterOnly({})", field.name));
                 }
             }
             FieldType::Keyword => {
@@ -155,7 +164,9 @@ pub fn schema_to_algolia_settings(schema: Schema) -> IndexSettings {
 
         // Handle sorting - in Algolia, sorting is done via custom ranking
         if field.sort {
-            settings.custom_ranking.push(format!("desc({})", field.name));
+            settings
+                .custom_ranking
+                .push(format!("desc({})", field.name));
         }
     }
 
@@ -222,7 +233,7 @@ pub fn algolia_settings_to_schema(settings: IndexSettings) -> Schema {
 
     Schema {
         fields,
-        primary_key: None, 
+        primary_key: None,
     }
 }
 
@@ -239,7 +250,7 @@ fn extract_field_from_ranking(ranking_rule: &str) -> Option<String> {
 
 pub fn create_retry_query(original_query: &SearchQuery, partial_hits: &[SearchHit]) -> SearchQuery {
     let mut retry_query = original_query.clone();
-    
+
     if !partial_hits.is_empty() {
         if let Some(current_page) = retry_query.page {
             retry_query.page = Some(current_page + 1);
@@ -250,7 +261,7 @@ pub fn create_retry_query(original_query: &SearchQuery, partial_hits: &[SearchHi
             retry_query.offset = Some(partial_hits.len() as u32);
         }
     }
-    
+
     retry_query
 }
 
@@ -292,7 +303,10 @@ mod tests {
 
         let algolia_query = search_query_to_algolia_query(search_query);
         assert_eq!(algolia_query.query, Some("test query".to_string()));
-        assert_eq!(algolia_query.facets, vec!["category".to_string(), "brand".to_string()]);
+        assert_eq!(
+            algolia_query.facets,
+            vec!["category".to_string(), "brand".to_string()]
+        );
         // Note: Highlight parameters are handled at the index level, not in search queries
     }
 
@@ -329,8 +343,12 @@ mod tests {
         };
 
         let settings = schema_to_algolia_settings(schema);
-        assert!(settings.searchable_attributes.contains(&"title".to_string()));
-        assert!(settings.attributes_for_faceting.contains(&"category".to_string()));
+        assert!(settings
+            .searchable_attributes
+            .contains(&"title".to_string()));
+        assert!(settings
+            .attributes_for_faceting
+            .contains(&"category".to_string()));
         assert!(settings.custom_ranking.contains(&"desc(price)".to_string()));
         // Note: Algolia doesn't support primary_key in settings
     }

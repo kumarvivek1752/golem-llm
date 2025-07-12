@@ -1,7 +1,7 @@
-use golem_search::error::{internal_error, search_error_from_status, from_reqwest_error};
+use golem_search::error::{from_reqwest_error, internal_error, search_error_from_status};
 use golem_search::golem::search::types::SearchError;
 use log::trace;
-use reqwest::{Client, RequestBuilder, Method, Response};
+use reqwest::{Client, Method, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -92,7 +92,6 @@ pub struct OpenSearchHit {
     pub highlight: Option<Value>,
 }
 
-
 #[derive(Debug, Serialize)]
 pub struct OpenSearchBulkOperation {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -157,7 +156,12 @@ pub struct OpenSearchError {
 }
 
 impl OpenSearchApi {
-    pub fn new(base_url: String, username: Option<String>, password: Option<String>, api_key: Option<String>) -> Self {
+    pub fn new(
+        base_url: String,
+        username: Option<String>,
+        password: Option<String>,
+        api_key: Option<String>,
+    ) -> Self {
         let client = Client::builder()
             .build()
             .expect("Failed to initialize HTTP client");
@@ -172,7 +176,8 @@ impl OpenSearchApi {
     }
 
     fn create_request(&self, method: Method, url: &str) -> RequestBuilder {
-        let mut builder = self.client
+        let mut builder = self
+            .client
             .request(method, url)
             .header("Content-Type", "application/json");
 
@@ -186,8 +191,14 @@ impl OpenSearchApi {
         builder
     }
 
-    fn create_request_with_content_type(&self, method: Method, url: &str, content_type: &str) -> RequestBuilder {
-        let mut builder = self.client
+    fn create_request_with_content_type(
+        &self,
+        method: Method,
+        url: &str,
+        content_type: &str,
+    ) -> RequestBuilder {
+        let mut builder = self
+            .client
             .request(method, url)
             .header("Content-Type", content_type);
 
@@ -201,22 +212,25 @@ impl OpenSearchApi {
         builder
     }
 
-
-    pub fn create_index(&self, index_name: &str, settings: Option<OpenSearchSettings>) -> Result<(), SearchError> {
+    pub fn create_index(
+        &self,
+        index_name: &str,
+        settings: Option<OpenSearchSettings>,
+    ) -> Result<(), SearchError> {
         trace!("Creating index: {index_name}");
 
         let url = format!("{}/{}", self.base_url, index_name);
-        
+
         let mut request = self.create_request(Method::PUT, &url);
-        
+
         if let Some(settings) = settings {
             request = request.json(&settings);
         }
-        
+
         let response = request
             .send()
             .map_err(|e| internal_error(format!("Failed to create index: {}", e)))?;
-        
+
         if response.status().is_success() {
             Ok(())
         } else {
@@ -228,11 +242,12 @@ impl OpenSearchApi {
         trace!("Deleting index: {index_name}");
 
         let url = format!("{}/{}", self.base_url, index_name);
-        
-        let response = self.create_request(Method::DELETE, &url)
+
+        let response = self
+            .create_request(Method::DELETE, &url)
             .send()
             .map_err(|e| internal_error(format!("Failed to delete index: {}", e)))?;
-        
+
         if response.status().is_success() {
             Ok(())
         } else {
@@ -244,24 +259,31 @@ impl OpenSearchApi {
         trace!("Listing indices");
 
         let url = format!("{}/_cat/indices?format=json", self.base_url);
-        
-        let response = self.create_request(Method::GET, &url)
+
+        let response = self
+            .create_request(Method::GET, &url)
             .send()
             .map_err(|e| internal_error(format!("Failed to list indices: {}", e)))?;
-        
+
         parse_response(response)
     }
 
-    pub fn index_document(&self, index_name: &str, id: &str, document: &Value) -> Result<(), SearchError> {
+    pub fn index_document(
+        &self,
+        index_name: &str,
+        id: &str,
+        document: &Value,
+    ) -> Result<(), SearchError> {
         trace!("Indexing document {id} in index: {index_name}");
 
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
-        
-        let response = self.create_request(Method::PUT, &url)
+
+        let response = self
+            .create_request(Method::PUT, &url)
             .json(document)
             .send()
             .map_err(|e| internal_error(format!("Failed to index document: {}", e)))?;
-        
+
         if response.status().is_success() {
             Ok(())
         } else {
@@ -273,12 +295,13 @@ impl OpenSearchApi {
         trace!("Performing bulk index operation");
 
         let url = format!("{}/_bulk", self.base_url);
-        
-        let response = self.create_request_with_content_type(Method::POST, &url, "application/x-ndjson")
+
+        let response = self
+            .create_request_with_content_type(Method::POST, &url, "application/x-ndjson")
             .body(operations.to_string())
             .send()
             .map_err(|e| internal_error(format!("Failed to perform bulk operation: {}", e)))?;
-        
+
         parse_response(response)
     }
 
@@ -286,11 +309,12 @@ impl OpenSearchApi {
         trace!("Deleting document {id} from index: {index_name}");
 
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
-        
-        let response = self.create_request(Method::DELETE, &url)
+
+        let response = self
+            .create_request(Method::DELETE, &url)
             .send()
             .map_err(|e| internal_error(format!("Failed to delete document: {}", e)))?;
-        
+
         if response.status().is_success() {
             Ok(())
         } else {
@@ -302,11 +326,12 @@ impl OpenSearchApi {
         trace!("Getting document {id} from index: {index_name}");
 
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
-        
-        let response = self.create_request(Method::GET, &url)
+
+        let response = self
+            .create_request(Method::GET, &url)
             .send()
             .map_err(|e| internal_error(format!("Failed to get document: {}", e)))?;
-        
+
         if response.status() == 404 {
             Ok(None)
         } else if response.status().is_success() {
@@ -321,16 +346,21 @@ impl OpenSearchApi {
         }
     }
 
-    pub fn search(&self, index_name: &str, query: &OpenSearchQuery) -> Result<OpenSearchSearchResponse, SearchError> {
+    pub fn search(
+        &self,
+        index_name: &str,
+        query: &OpenSearchQuery,
+    ) -> Result<OpenSearchSearchResponse, SearchError> {
         trace!("Searching index {index_name} with query: {query:?}");
 
         let url = format!("{}/{}/_search", self.base_url, index_name);
-        
-        let response = self.create_request(Method::POST, &url)
+
+        let response = self
+            .create_request(Method::POST, &url)
             .json(query)
             .send()
             .map_err(|e| internal_error(format!("Failed to search: {}", e)))?;
-        
+
         parse_response(response)
     }
 
@@ -338,24 +368,30 @@ impl OpenSearchApi {
         trace!("Getting mappings for index: {index_name}");
 
         let url = format!("{}/{}/_mapping", self.base_url, index_name);
-        
-        let response = self.create_request(Method::GET, &url)
+
+        let response = self
+            .create_request(Method::GET, &url)
             .send()
             .map_err(|e| internal_error(format!("Failed to get mappings: {}", e)))?;
-        
+
         parse_response(response)
     }
 
-    pub fn put_mappings(&self, index_name: &str, mappings: &OpenSearchMappings) -> Result<(), SearchError> {
+    pub fn put_mappings(
+        &self,
+        index_name: &str,
+        mappings: &OpenSearchMappings,
+    ) -> Result<(), SearchError> {
         trace!("Putting mappings for index: {index_name}");
 
         let url = format!("{}/{}/_mapping", self.base_url, index_name);
-        
-        let response = self.create_request(Method::PUT, &url)
+
+        let response = self
+            .create_request(Method::PUT, &url)
             .json(mappings)
             .send()
             .map_err(|e| internal_error(format!("Failed to put mappings: {}", e)))?;
-        
+
         if response.status().is_success() {
             Ok(())
         } else {

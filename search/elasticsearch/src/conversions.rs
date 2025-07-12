@@ -1,22 +1,24 @@
 use crate::client::{
     ElasticsearchHit, ElasticsearchMappings, ElasticsearchQuery, ElasticsearchSearchResponse,
-    ElasticsearchSettings
+    ElasticsearchSettings,
 };
 use golem_search::golem::search::types::{
-    Doc, FieldType, Schema, SchemaField, SearchHit, SearchQuery,
-    SearchResults,
+    Doc, FieldType, Schema, SchemaField, SearchHit, SearchQuery, SearchResults,
 };
 use serde_json::{json, Map, Value};
 
 pub fn doc_to_elasticsearch_document(doc: Doc) -> Result<Value, String> {
     // Validate document ID length (Elasticsearch limit is 512 bytes)
     if doc.id.len() > 512 {
-        return Err(format!("Document ID too long: {} bytes (max 512)", doc.id.len()));
+        return Err(format!(
+            "Document ID too long: {} bytes (max 512)",
+            doc.id.len()
+        ));
     }
-    
+
     let content: Value = serde_json::from_str(&doc.content)
         .map_err(|e| format!("Invalid JSON in document content: {}", e))?;
-    
+
     let document = match content {
         Value::Object(mut obj) => {
             obj.insert("id".to_string(), Value::String(doc.id));
@@ -29,7 +31,7 @@ pub fn doc_to_elasticsearch_document(doc: Doc) -> Result<Value, String> {
             Value::Object(obj)
         }
     };
-    
+
     Ok(document)
 }
 
@@ -140,8 +142,7 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
                         "order": order
                     }
                 }));
-            } else if sort_field.starts_with('-') {
-                let field = &sort_field[1..];
+            } else if let Some(field) = sort_field.strip_prefix('-') {
                 sort_array.push(json!({
                     field: {
                         "order": "desc"
@@ -233,7 +234,7 @@ pub fn elasticsearch_response_to_search_results(
 
     let total = match response.hits.total.relation.as_str() {
         "eq" => Some(response.hits.total.value),
-        "gte" => Some(response.hits.total.value), 
+        "gte" => Some(response.hits.total.value),
         _ => None,
     };
 
@@ -242,21 +243,21 @@ pub fn elasticsearch_response_to_search_results(
         page: None, // Elasticsearch uses from/size, not page-based pagination
         per_page: None,
         hits,
-        facets: response.aggregations.map(|aggs| {
-            serde_json::to_string(&aggs).unwrap_or_else(|_| "{}".to_string())
-        }),
+        facets: response
+            .aggregations
+            .map(|aggs| serde_json::to_string(&aggs).unwrap_or_else(|_| "{}".to_string())),
         took_ms: Some(response.took),
     }
 }
 
 fn elasticsearch_hit_to_search_hit(hit: ElasticsearchHit) -> SearchHit {
-    let content = hit.source.map(|source| {
-        serde_json::to_string(&source).unwrap_or_else(|_| "{}".to_string())
-    });
+    let content = hit
+        .source
+        .map(|source| serde_json::to_string(&source).unwrap_or_else(|_| "{}".to_string()));
 
-    let highlights = hit.highlight.map(|highlight| {
-        serde_json::to_string(&highlight).unwrap_or_else(|_| "{}".to_string())
-    });
+    let highlights = hit
+        .highlight
+        .map(|highlight| serde_json::to_string(&highlight).unwrap_or_else(|_| "{}".to_string()));
 
     SearchHit {
         id: hit.id,
@@ -276,12 +277,15 @@ pub fn schema_to_elasticsearch_settings(schema: Schema) -> ElasticsearchSettings
             FieldType::Text => {
                 field_mapping.insert("type".to_string(), Value::String("text".to_string()));
 
-                field_mapping.insert("fields".to_string(), json!({
-                    "keyword": {
-                        "type": "keyword",
-                        "ignore_above": 256
-                    }
-                }));
+                field_mapping.insert(
+                    "fields".to_string(),
+                    json!({
+                        "keyword": {
+                            "type": "keyword",
+                            "ignore_above": 256
+                        }
+                    }),
+                );
             }
             FieldType::Keyword => {
                 field_mapping.insert("type".to_string(), Value::String("keyword".to_string()));
@@ -310,16 +314,22 @@ pub fn schema_to_elasticsearch_settings(schema: Schema) -> ElasticsearchSettings
         properties.insert(field.name, Value::Object(field_mapping));
     }
 
-    properties.insert("year".to_string(), json!({
-        "type": "integer"
-    }));
-    properties.insert("id".to_string(), json!({
-        "type": "keyword"
-    }));
+    properties.insert(
+        "year".to_string(),
+        json!({
+            "type": "integer"
+        }),
+    );
+    properties.insert(
+        "id".to_string(),
+        json!({
+            "type": "keyword"
+        }),
+    );
 
     let mappings = ElasticsearchMappings {
         properties: Some(properties),
-        dynamic: Some(true), 
+        dynamic: Some(true),
     };
 
     ElasticsearchSettings {
@@ -347,7 +357,7 @@ pub fn elasticsearch_mappings_to_schema(mappings: Value, index_name: &str) -> Sc
                         "boolean" => FieldType::Boolean,
                         "date" => FieldType::Date,
                         "geo_point" => FieldType::GeoPoint,
-                        _ => FieldType::Text, 
+                        _ => FieldType::Text,
                     };
 
                     let index = field_def
@@ -374,26 +384,26 @@ pub fn elasticsearch_mappings_to_schema(mappings: Value, index_name: &str) -> Sc
     }
 }
 
-
 pub fn create_retry_query(original_query: &SearchQuery, partial_hits: &[SearchHit]) -> SearchQuery {
     let mut retry_query = original_query.clone();
-    
 
     if !partial_hits.is_empty() {
         let current_offset = original_query.offset.unwrap_or(0);
         let received_count = partial_hits.len() as u32;
         retry_query.offset = Some(current_offset + received_count);
     }
-    
+
     retry_query
 }
 
-
-pub fn build_bulk_operations(index_name: &str, docs: &[Doc], operation: &str) -> Result<String, String> {
+pub fn build_bulk_operations(
+    index_name: &str,
+    docs: &[Doc],
+    operation: &str,
+) -> Result<String, String> {
     let mut bulk_ops = String::new();
-    
-    for doc in docs {
 
+    for doc in docs {
         let action = json!({
             operation: {
                 "_index": index_name,
@@ -402,7 +412,6 @@ pub fn build_bulk_operations(index_name: &str, docs: &[Doc], operation: &str) ->
         });
         bulk_ops.push_str(&serde_json::to_string(&action).map_err(|e| e.to_string())?);
         bulk_ops.push('\n');
-        
 
         if operation != "delete" {
             let document = doc_to_elasticsearch_document(doc.clone())?;
@@ -410,14 +419,13 @@ pub fn build_bulk_operations(index_name: &str, docs: &[Doc], operation: &str) ->
             bulk_ops.push('\n');
         }
     }
-    
+
     Ok(bulk_ops)
 }
 
-
 pub fn build_bulk_delete_operations(index_name: &str, ids: &[String]) -> Result<String, String> {
     let mut bulk_ops = String::new();
-    
+
     for id in ids {
         let action = json!({
             "delete": {
@@ -428,6 +436,6 @@ pub fn build_bulk_delete_operations(index_name: &str, ids: &[String]) -> Result<
         bulk_ops.push_str(&serde_json::to_string(&action).map_err(|e| e.to_string())?);
         bulk_ops.push('\n');
     }
-    
+
     Ok(bulk_ops)
 }

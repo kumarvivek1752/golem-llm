@@ -1,7 +1,7 @@
-use golem_search::error::{internal_error, search_error_from_status, from_reqwest_error};
+use golem_search::error::{from_reqwest_error, internal_error, search_error_from_status};
 use golem_search::golem::search::types::SearchError;
 use log::trace;
-use reqwest::{Client, RequestBuilder, Method, Response};
+use reqwest::{Client, Method, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -21,7 +21,7 @@ impl TypesenseSearchApi {
         let client = Client::builder()
             .build()
             .expect("Failed to initialize HTTP client");
-        
+
         Self {
             api_key,
             client,
@@ -30,18 +30,21 @@ impl TypesenseSearchApi {
     }
 
     fn create_request(&self, method: Method, url: &str) -> RequestBuilder {
-
         self.client
             .request(method, url)
             .header("X-TYPESENSE-API-KEY", &self.api_key)
             .header("Content-Type", "application/json")
     }
 
-    pub fn create_collection(&self, collection_name: &str, schema: &CollectionSchema) -> Result<CreateCollectionResponse, SearchError> {
+    pub fn create_collection(
+        &self,
+        collection_name: &str,
+        schema: &CollectionSchema,
+    ) -> Result<CreateCollectionResponse, SearchError> {
         trace!("Creating collection: {collection_name}");
-        
+
         let url = format!("{}/collections", self.base_url);
-        
+
         let response = self
             .create_request(Method::POST, &url)
             .json(schema)
@@ -51,11 +54,14 @@ impl TypesenseSearchApi {
         parse_response(response)
     }
 
-    pub fn delete_collection(&self, collection_name: &str) -> Result<DeleteCollectionResponse, SearchError> {
+    pub fn delete_collection(
+        &self,
+        collection_name: &str,
+    ) -> Result<DeleteCollectionResponse, SearchError> {
         trace!("Deleting collection: {collection_name}");
-        
+
         let url = format!("{}/collections/{}", self.base_url, collection_name);
-        
+
         let response = self
             .create_request(Method::DELETE, &url)
             .send()
@@ -66,9 +72,9 @@ impl TypesenseSearchApi {
 
     pub fn list_collections(&self) -> Result<ListCollectionsResponse, SearchError> {
         trace!("Listing collections");
-        
+
         let url = format!("{}/collections", self.base_url);
-        
+
         let response = self
             .create_request(Method::GET, &url)
             .send()
@@ -77,11 +83,18 @@ impl TypesenseSearchApi {
         parse_response(response)
     }
 
-    pub fn _index_document(&self, collection_name: &str, document: &TypesenseDocument) -> Result<IndexDocumentResponse, SearchError> {
+    pub fn _index_document(
+        &self,
+        collection_name: &str,
+        document: &TypesenseDocument,
+    ) -> Result<IndexDocumentResponse, SearchError> {
         trace!("Indexing document to collection: {collection_name}");
-        
-        let url = format!("{}/collections/{}/documents", self.base_url, collection_name);
-        
+
+        let url = format!(
+            "{}/collections/{}/documents",
+            self.base_url, collection_name
+        );
+
         let response = self
             .create_request(Method::POST, &url)
             .json(document)
@@ -91,16 +104,27 @@ impl TypesenseSearchApi {
         parse_response(response)
     }
 
-    pub fn index_documents(&self, collection_name: &str, documents: &[TypesenseDocument]) -> Result<IndexDocumentsResponse, SearchError> {
-        trace!("Indexing {} documents to collection: {collection_name}", documents.len());
-        
-        let url = format!("{}/collections/{}/documents/import", self.base_url, collection_name);
-        
-        let ndjson = documents.iter()
+    pub fn index_documents(
+        &self,
+        collection_name: &str,
+        documents: &[TypesenseDocument],
+    ) -> Result<IndexDocumentsResponse, SearchError> {
+        trace!(
+            "Indexing {} documents to collection: {collection_name}",
+            documents.len()
+        );
+
+        let url = format!(
+            "{}/collections/{}/documents/import",
+            self.base_url, collection_name
+        );
+
+        let ndjson = documents
+            .iter()
             .map(|doc| serde_json::to_string(doc).unwrap_or_default())
             .collect::<Vec<_>>()
             .join("\n");
-        
+
         let response = self
             .create_request(Method::POST, &url)
             .header("Content-Type", "text/plain")
@@ -111,11 +135,18 @@ impl TypesenseSearchApi {
         parse_bulk_import_response(response)
     }
 
-    pub fn upsert_document(&self, collection_name: &str, document: &TypesenseDocument) -> Result<UpsertDocumentResponse, SearchError> {
+    pub fn upsert_document(
+        &self,
+        collection_name: &str,
+        document: &TypesenseDocument,
+    ) -> Result<UpsertDocumentResponse, SearchError> {
         trace!("Upserting document to collection: {collection_name}");
-        
-        let url = format!("{}/collections/{}/documents?action=upsert", self.base_url, collection_name);
-        
+
+        let url = format!(
+            "{}/collections/{}/documents?action=upsert",
+            self.base_url, collection_name
+        );
+
         let response = self
             .create_request(Method::POST, &url)
             .json(document)
@@ -125,11 +156,18 @@ impl TypesenseSearchApi {
         parse_response(response)
     }
 
-    pub fn delete_document(&self, collection_name: &str, document_id: &str) -> Result<DeleteDocumentResponse, SearchError> {
+    pub fn delete_document(
+        &self,
+        collection_name: &str,
+        document_id: &str,
+    ) -> Result<DeleteDocumentResponse, SearchError> {
         trace!("Deleting document {document_id} from collection: {collection_name}");
-        
-        let url = format!("{}/collections/{}/documents/{}", self.base_url, collection_name, document_id);
-        
+
+        let url = format!(
+            "{}/collections/{}/documents/{}",
+            self.base_url, collection_name, document_id
+        );
+
         let response = self
             .create_request(Method::DELETE, &url)
             .send()
@@ -138,11 +176,18 @@ impl TypesenseSearchApi {
         parse_response(response)
     }
 
-    pub fn delete_documents_by_query(&self, collection_name: &str, filter_by: &str) -> Result<DeleteDocumentsResponse, SearchError> {
+    pub fn delete_documents_by_query(
+        &self,
+        collection_name: &str,
+        filter_by: &str,
+    ) -> Result<DeleteDocumentsResponse, SearchError> {
         trace!("Deleting documents from collection: {collection_name} with filter: {filter_by}");
-        
-        let url = format!("{}/collections/{}/documents?filter_by={}", self.base_url, collection_name, filter_by);
-        
+
+        let url = format!(
+            "{}/collections/{}/documents?filter_by={}",
+            self.base_url, collection_name, filter_by
+        );
+
         let response = self
             .create_request(Method::DELETE, &url)
             .send()
@@ -151,18 +196,25 @@ impl TypesenseSearchApi {
         parse_response(response)
     }
 
-    pub fn search(&self, collection_name: &str, query: &SearchQuery) -> Result<SearchResponse, SearchError> {
+    pub fn search(
+        &self,
+        collection_name: &str,
+        query: &SearchQuery,
+    ) -> Result<SearchResponse, SearchError> {
         trace!("Searching collection: {collection_name}");
-        
-        let url = format!("{}/collections/{}/documents/search", self.base_url, collection_name);
-        
+
+        let url = format!(
+            "{}/collections/{}/documents/search",
+            self.base_url, collection_name
+        );
+
         let query_string = self.build_query_string(query)?;
         let full_url = if query_string.is_empty() {
             url
         } else {
             format!("{}?{}", url, query_string)
         };
-        
+
         let response = self
             .create_request(Method::GET, &full_url)
             .send()
@@ -173,9 +225,9 @@ impl TypesenseSearchApi {
 
     fn build_query_string(&self, query: &SearchQuery) -> Result<String, SearchError> {
         let mut params = Vec::new();
-        
+
         params.push(format!("q={}", urlencoding::encode(&query.q)));
-        
+
         if let Some(ref query_by) = query.query_by {
             params.push(format!("query_by={}", urlencoding::encode(query_by)));
         }
@@ -194,15 +246,18 @@ impl TypesenseSearchApi {
         if let Some(per_page) = query.per_page {
             params.push(format!("per_page={}", per_page));
         }
-        
+
         Ok(params.join("&"))
     }
 
-    pub fn _multi_search(&self, searches: &MultiSearchQuery) -> Result<MultiSearchResponse, SearchError> {
+    pub fn _multi_search(
+        &self,
+        searches: &MultiSearchQuery,
+    ) -> Result<MultiSearchResponse, SearchError> {
         trace!("Performing multi-search");
-        
+
         let url = format!("{}/multi_search", self.base_url);
-        
+
         let response = self
             .create_request(Method::POST, &url)
             .json(searches)
@@ -231,7 +286,7 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, 
             .text()
             .map_err(|err| from_reqwest_error("Failed to receive error response body", err))?;
 
-       trace!("Received {status} response from Typesense API: {error_body:?}");
+        trace!("Received {status} response from Typesense API: {error_body:?}");
 
         Err(search_error_from_status(status))
     }
@@ -239,43 +294,50 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, 
 
 fn parse_bulk_import_response(response: Response) -> Result<IndexDocumentsResponse, SearchError> {
     let status = response.status();
-    
+
     if status.is_success() {
         let body_str = response
             .text()
             .map_err(|err| from_reqwest_error("Failed to read response", err))?;
-        
+
         let lines: Vec<&str> = body_str.trim().split('\n').collect();
         let mut success_count = 0;
         let mut total_processed = 0;
-        
+
         for line in lines {
             if !line.trim().is_empty() {
                 total_processed += 1;
                 match serde_json::from_str::<serde_json::Value>(line) {
                     Ok(json) => {
-                        if json.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        if json
+                            .get("success")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                        {
                             success_count += 1;
                         }
                     }
                     Err(e) => {
-                        println!("[Typesense] Failed to parse NDJSON line: {} | line: {}", e, line);
+                        println!(
+                            "[Typesense] Failed to parse NDJSON line: {} | line: {}",
+                            e, line
+                        );
                     }
                 }
             }
         }
-        
+
         let response = IndexDocumentsResponse {
             success: success_count == total_processed && total_processed > 0,
             num_imported: Some(success_count),
         };
-        
+
         Ok(response)
     } else {
         let _error_body = response
             .text()
             .map_err(|err| from_reqwest_error("Failed to receive error response body", err))?;
-        
+
         Err(search_error_from_status(status))
     }
 }

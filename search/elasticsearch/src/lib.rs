@@ -5,14 +5,14 @@ use crate::conversions::{
     elasticsearch_response_to_search_results, schema_to_elasticsearch_settings,
     search_query_to_elasticsearch_query,
 };
-use golem_search::golem::search::core::{Guest, SearchStream, GuestSearchStream};
-use golem_search::golem::search::types::{
-    DocumentId, Doc, IndexName, Schema, SearchError, SearchHit, SearchQuery, SearchResults,
-};
+use golem_rust::wasm_rpc::Pollable;
 use golem_search::config::with_config_keys;
 use golem_search::durability::{DurableSearch, ExtendedGuest};
+use golem_search::golem::search::core::{Guest, GuestSearchStream, SearchStream};
+use golem_search::golem::search::types::{
+    Doc, DocumentId, IndexName, Schema, SearchError, SearchHit, SearchQuery, SearchResults,
+};
 use golem_search::LOGGING_STATE;
-use golem_rust::wasm_rpc::Pollable;
 use std::cell::{Cell, RefCell};
 
 mod client;
@@ -54,16 +54,16 @@ impl GuestSearchStream for ElasticsearchSearchStream {
         // For first request, use regular search with scroll
         if self.scroll_id.borrow().is_none() {
             let mut es_query = search_query_to_elasticsearch_query(self.query.clone());
-            
+
             es_query.from = Some(self.current_offset.get());
             es_query.size = Some(self.query.per_page.unwrap_or(10));
 
             let _url = format!("{}/_search?scroll=1m", self.index_name);
-            
+
             match self.client.search(&self.index_name, &es_query) {
                 Ok(response) => {
                     let search_results = elasticsearch_response_to_search_results(response);
-                    
+
                     if search_results.hits.is_empty() {
                         self.finished.set(true);
                         return Some(vec![]);
@@ -118,7 +118,9 @@ impl ElasticsearchComponent {
             ],
             |keys| {
                 if keys.is_empty() || keys[0].is_empty() {
-                    return Err(SearchError::Internal("Missing Elasticsearch URL".to_string()));
+                    return Err(SearchError::Internal(
+                        "Missing Elasticsearch URL".to_string(),
+                    ));
                 }
 
                 let url = keys[0].clone();
@@ -177,23 +179,28 @@ impl Guest for ElasticsearchComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        let document = doc_to_elasticsearch_document(doc)
-            .map_err(|e| SearchError::InvalidQuery(e))?;
+        let document = doc_to_elasticsearch_document(doc).map_err(SearchError::InvalidQuery)?;
 
-        client.index_document(&index, &document["id"].as_str().unwrap_or_default(), &document)
+        client.index_document(
+            &index,
+            document["id"].as_str().unwrap_or_default(),
+            &document,
+        )
     }
 
     fn upsert_many(index: IndexName, docs: Vec<Doc>) -> Result<(), SearchError> {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        let bulk_operations = build_bulk_operations(&index, &docs, "index")
-            .map_err(|e| SearchError::InvalidQuery(e))?;
+        let bulk_operations =
+            build_bulk_operations(&index, &docs, "index").map_err(SearchError::InvalidQuery)?;
 
         match client.bulk_index(&bulk_operations) {
             Ok(response) => {
                 if response.errors {
-                    Err(SearchError::Internal("Some bulk operations failed".to_string()))
+                    Err(SearchError::Internal(
+                        "Some bulk operations failed".to_string(),
+                    ))
                 } else {
                     Ok(())
                 }
@@ -213,13 +220,15 @@ impl Guest for ElasticsearchComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client()?;
-        let bulk_operations = build_bulk_delete_operations(&index, &ids)
-            .map_err(|e| SearchError::InvalidQuery(e))?;
+        let bulk_operations =
+            build_bulk_delete_operations(&index, &ids).map_err(SearchError::InvalidQuery)?;
 
         match client.bulk_index(&bulk_operations) {
             Ok(response) => {
                 if response.errors {
-                    Err(SearchError::Internal("Some bulk delete operations failed".to_string()))
+                    Err(SearchError::Internal(
+                        "Some bulk delete operations failed".to_string(),
+                    ))
                 } else {
                     Ok(())
                 }
@@ -288,12 +297,7 @@ impl ExtendedGuest for ElasticsearchComponent {
         LOGGING_STATE.with_borrow_mut(|state| state.init());
 
         let client = Self::create_client().unwrap_or_else(|_| {
-            ElasticsearchApi::new(
-                "http://localhost:9200".to_string(),
-                None,
-                None,
-                None,
-            )
+            ElasticsearchApi::new("http://localhost:9200".to_string(), None, None, None)
         });
 
         ElasticsearchSearchStream::new(client, index, query)
@@ -312,6 +316,5 @@ type DurableElasticsearchComponent = DurableSearch<ElasticsearchComponent>;
 
 golem_search::export_search!(DurableElasticsearchComponent with_types_in golem_search);
 
-
 // test 4
-// streaming 
+// streaming
