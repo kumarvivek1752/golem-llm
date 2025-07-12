@@ -292,8 +292,14 @@ mod tests {
     fn test_meilisearch_document_to_doc() {
         let mut meilisearch_doc = JsonMap::new();
         meilisearch_doc.insert("id".to_string(), JsonValue::String("test-id".to_string()));
-        meilisearch_doc.insert("title".to_string(), JsonValue::String("Test Document".to_string()));
-        meilisearch_doc.insert("content".to_string(), JsonValue::String("This is a test".to_string()));
+        meilisearch_doc.insert(
+            "title".to_string(),
+            JsonValue::String("Test Document".to_string()),
+        );
+        meilisearch_doc.insert(
+            "content".to_string(),
+            JsonValue::String("This is a test".to_string()),
+        );
 
         let doc = meilisearch_document_to_doc(meilisearch_doc);
         assert_eq!(doc.id, "test-id");
@@ -313,7 +319,10 @@ mod tests {
     #[test]
     fn test_meilisearch_document_to_doc_numeric_id() {
         let mut meilisearch_doc = JsonMap::new();
-        meilisearch_doc.insert("id".to_string(), JsonValue::Number(serde_json::Number::from(123)));
+        meilisearch_doc.insert(
+            "id".to_string(),
+            JsonValue::Number(serde_json::Number::from(123)),
+        );
         meilisearch_doc.insert("title".to_string(), JsonValue::String("Test".to_string()));
 
         let doc = meilisearch_document_to_doc(meilisearch_doc);
@@ -324,7 +333,10 @@ mod tests {
     fn test_search_query_to_meilisearch_request() {
         let search_query = SearchQuery {
             q: Some("test query".to_string()),
-            filters: vec!["category = electronics".to_string(), "price > 100".to_string()],
+            filters: vec![
+                "category = electronics".to_string(),
+                "price > 100".to_string(),
+            ],
             sort: vec!["price:desc".to_string()],
             facets: vec!["category".to_string(), "brand".to_string()],
             page: None,
@@ -341,9 +353,18 @@ mod tests {
 
         let meilisearch_request = search_query_to_meilisearch_request(search_query);
         assert_eq!(meilisearch_request.q, Some("test query".to_string()));
-        assert_eq!(meilisearch_request.filter, Some("category = electronics AND price > 100".to_string()));
-        assert_eq!(meilisearch_request.sort, Some(vec!["price:desc".to_string()]));
-        assert_eq!(meilisearch_request.facets, Some(vec!["category".to_string(), "brand".to_string()]));
+        assert_eq!(
+            meilisearch_request.filter,
+            Some("category = electronics AND price > 100".to_string())
+        );
+        assert_eq!(
+            meilisearch_request.sort,
+            Some(vec!["price:desc".to_string()])
+        );
+        assert_eq!(
+            meilisearch_request.facets,
+            Some(vec!["category".to_string(), "brand".to_string()])
+        );
         assert_eq!(meilisearch_request.limit, Some(20));
         assert_eq!(meilisearch_request.offset, Some(10));
     }
@@ -366,12 +387,17 @@ mod tests {
                 boost_fields: vec![],
                 exact_match_boost: None,
                 language: None,
-                provider_params: Some(r#"{"attributes_to_retrieve": ["title", "price"]}"#.to_string()),
+                provider_params: Some(
+                    r#"{"attributes_to_retrieve": ["title", "price"]}"#.to_string(),
+                ),
             }),
         };
 
         let meilisearch_request = search_query_to_meilisearch_request(search_query);
-        assert_eq!(meilisearch_request.attributes_to_retrieve, Some(vec!["title".to_string(), "price".to_string()]));
+        assert_eq!(
+            meilisearch_request.attributes_to_retrieve,
+            Some(vec!["title".to_string(), "price".to_string()])
+        );
     }
 
     #[test]
@@ -407,9 +433,18 @@ mod tests {
         };
 
         let settings = schema_to_meilisearch_settings(schema);
-        assert_eq!(settings.searchable_attributes, Some(vec!["title".to_string(), "category".to_string()]));
-        assert_eq!(settings.filterable_attributes, Some(vec!["category".to_string(), "price".to_string()]));
-        assert_eq!(settings.sortable_attributes, Some(vec!["price".to_string()]));
+        assert_eq!(
+            settings.searchable_attributes,
+            Some(vec!["title".to_string(), "category".to_string()])
+        );
+        assert_eq!(
+            settings.filterable_attributes,
+            Some(vec!["category".to_string(), "price".to_string()])
+        );
+        assert_eq!(
+            settings.sortable_attributes,
+            Some(vec!["price".to_string()])
+        );
     }
 
     #[test]
@@ -423,14 +458,14 @@ mod tests {
         };
 
         let schema = meilisearch_settings_to_schema(settings);
-        assert!(schema.fields.len() > 0);
-        
+        assert!(!schema.fields.is_empty());
+
         let title_field = schema.fields.iter().find(|f| f.name == "title").unwrap();
         assert!(title_field.index);
-        
+
         let category_field = schema.fields.iter().find(|f| f.name == "category").unwrap();
         assert!(category_field.facet);
-        
+
         let price_field = schema.fields.iter().find(|f| f.name == "price").unwrap();
         assert!(price_field.facet);
         assert!(price_field.sort);
@@ -440,17 +475,29 @@ mod tests {
     fn test_meilisearch_response_to_search_results() {
         let mut hit1 = JsonMap::new();
         hit1.insert("id".to_string(), JsonValue::String("doc1".to_string()));
-        hit1.insert("title".to_string(), JsonValue::String("Test Document 1".to_string()));
+        hit1.insert(
+            "title".to_string(),
+            JsonValue::String("Test Document 1".to_string()),
+        );
 
         let mut hit2 = JsonMap::new();
         hit2.insert("id".to_string(), JsonValue::String("doc2".to_string()));
-        hit2.insert("title".to_string(), JsonValue::String("Test Document 2".to_string()));
+        hit2.insert(
+            "title".to_string(),
+            JsonValue::String("Test Document 2".to_string()),
+        );
 
         let facet_distribution = {
             let mut facets = JsonMap::new();
             let mut category_facet = JsonMap::new();
-            category_facet.insert("electronics".to_string(), JsonValue::Number(serde_json::Number::from(1)));
-            category_facet.insert("books".to_string(), JsonValue::Number(serde_json::Number::from(1)));
+            category_facet.insert(
+                "electronics".to_string(),
+                JsonValue::Number(serde_json::Number::from(1)),
+            );
+            category_facet.insert(
+                "books".to_string(),
+                JsonValue::Number(serde_json::Number::from(1)),
+            );
             facets.insert("category".to_string(), JsonValue::Object(category_facet));
             facets
         };
@@ -489,14 +536,12 @@ mod tests {
             config: None,
         };
 
-        let partial_hits = vec![
-            SearchHit {
-                id: "doc1".to_string(),
-                score: Some(1.0),
-                content: Some("{}".to_string()),
-                highlights: None,
-            },
-        ];
+        let partial_hits = vec![SearchHit {
+            id: "doc1".to_string(),
+            score: Some(1.0),
+            content: Some("{}".to_string()),
+            highlights: None,
+        }];
 
         let retry_query = create_retry_query(&original_query, &partial_hits);
         assert_eq!(retry_query.offset, Some(21)); // 20 + 1 hit received
@@ -537,7 +582,10 @@ mod tests {
 
     #[test]
     fn test_convert_filters_to_meilisearch() {
-        let filters = vec!["category = electronics".to_string(), "price > 100".to_string()];
+        let filters = vec![
+            "category = electronics".to_string(),
+            "price > 100".to_string(),
+        ];
         let meilisearch_filter = convert_filters_to_meilisearch(filters);
         assert_eq!(meilisearch_filter, "category = electronics AND price > 100");
     }
@@ -546,13 +594,22 @@ mod tests {
     fn test_convert_meilisearch_facets_to_golem() {
         let mut facets = JsonMap::new();
         let mut category_facet = JsonMap::new();
-        category_facet.insert("electronics".to_string(), JsonValue::Number(serde_json::Number::from(5)));
-        category_facet.insert("books".to_string(), JsonValue::Number(serde_json::Number::from(3)));
+        category_facet.insert(
+            "electronics".to_string(),
+            JsonValue::Number(serde_json::Number::from(5)),
+        );
+        category_facet.insert(
+            "books".to_string(),
+            JsonValue::Number(serde_json::Number::from(3)),
+        );
         facets.insert("category".to_string(), JsonValue::Object(category_facet));
 
         let golem_facets = _convert_meilisearch_facets_to_golem(facets);
         assert_eq!(golem_facets.len(), 1);
-        assert_eq!(golem_facets.get("category").unwrap().get("electronics"), Some(&5));
+        assert_eq!(
+            golem_facets.get("category").unwrap().get("electronics"),
+            Some(&5)
+        );
         assert_eq!(golem_facets.get("category").unwrap().get("books"), Some(&3));
     }
 }

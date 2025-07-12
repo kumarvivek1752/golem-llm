@@ -292,7 +292,9 @@ mod tests {
 
         let result = doc_to_algolia_object(doc);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Failed to parse document content as JSON"));
+        assert!(result
+            .unwrap_err()
+            .contains("Failed to parse document content as JSON"));
     }
 
     #[test]
@@ -343,8 +345,14 @@ mod tests {
 
         let algolia_query = search_query_to_algolia_query(search_query);
         assert_eq!(algolia_query.query, Some("test query".to_string()));
-        assert_eq!(algolia_query.filters, Some("category:electronics AND price:>100".to_string()));
-        assert_eq!(algolia_query.facets, vec!["category".to_string(), "brand".to_string()]);
+        assert_eq!(
+            algolia_query.filters,
+            Some("category:electronics AND price:>100".to_string())
+        );
+        assert_eq!(
+            algolia_query.facets,
+            vec!["category".to_string(), "brand".to_string()]
+        );
         assert_eq!(algolia_query.page, Some(1));
         assert_eq!(algolia_query.hits_per_page, Some(20));
     }
@@ -367,12 +375,17 @@ mod tests {
                 boost_fields: vec![],
                 exact_match_boost: None,
                 language: None,
-                provider_params: Some(r#"{"analytics": true, "numericFilters": ["price>100"]}"#.to_string()),
+                provider_params: Some(
+                    r#"{"analytics": true, "numericFilters": ["price>100"]}"#.to_string(),
+                ),
             }),
         };
 
         let algolia_query = search_query_to_algolia_query(search_query);
-        assert_eq!(algolia_query.attributes_to_retrieve, vec!["title".to_string(), "price".to_string()]);
+        assert_eq!(
+            algolia_query.attributes_to_retrieve,
+            vec!["title".to_string(), "price".to_string()]
+        );
         assert_eq!(algolia_query.typo_tolerance, Some(false));
         assert_eq!(algolia_query.analytics, Some(true));
     }
@@ -410,35 +423,43 @@ mod tests {
         };
 
         let settings = schema_to_algolia_settings(schema);
-        assert!(settings.searchable_attributes.contains(&"title".to_string()));
-        assert!(settings.searchable_attributes.contains(&"category".to_string()));
-        assert!(settings.attributes_for_faceting.contains(&"category".to_string()));
-        assert!(settings.attributes_for_faceting.contains(&"price".to_string()));
+        assert!(settings
+            .searchable_attributes
+            .contains(&"title".to_string()));
+        assert!(settings
+            .searchable_attributes
+            .contains(&"category".to_string()));
+        assert!(settings
+            .attributes_for_faceting
+            .contains(&"category".to_string()));
+        assert!(settings
+            .attributes_for_faceting
+            .contains(&"price".to_string()));
         assert!(settings.custom_ranking.contains(&"desc(price)".to_string()));
     }
 
     #[test]
     fn test_algolia_response_conversion() {
         let algolia_response = SearchResponse {
-            hits: vec![
-                AlgoliaSearchHit {
-                    object_id: "doc1".to_string(),
-                    content: serde_json::json!({"title": "Test Document 1"}),
-                    highlight_result: Some(serde_json::json!({"title": {"value": "Test <em>Document</em> 1"}})),
-                    snippet_result: None,
-                    ranking_info: Some(crate::client::RankingInfo {
-                        nb_typos: 0,
-                        first_matched_word: 0,
-                        proximity_distance: 0,
-                        user_score: 100,
-                        geo_distance: 0,
-                        geo_precision: 0,
-                        nb_exact_words: 1,
-                        words: 1,
-                        filters: 0,
-                    }),
-                },
-            ],
+            hits: vec![AlgoliaSearchHit {
+                object_id: "doc1".to_string(),
+                content: serde_json::json!({"title": "Test Document 1"}),
+                highlight_result: Some(
+                    serde_json::json!({"title": {"value": "Test <em>Document</em> 1"}}),
+                ),
+                snippet_result: None,
+                ranking_info: Some(crate::client::RankingInfo {
+                    nb_typos: 0,
+                    first_matched_word: 0,
+                    proximity_distance: 0,
+                    user_score: 100,
+                    geo_distance: 0,
+                    geo_precision: 0,
+                    nb_exact_words: 1,
+                    words: 1,
+                    filters: 0,
+                }),
+            }],
             page: 0,
             nb_hits: 1,
             nb_pages: 1,
@@ -477,14 +498,12 @@ mod tests {
             config: None,
         };
 
-        let partial_hits = vec![
-            SearchHit {
-                id: "doc1".to_string(),
-                score: Some(1.0),
-                content: Some("{}".to_string()),
-                highlights: None,
-            },
-        ];
+        let partial_hits = vec![SearchHit {
+            id: "doc1".to_string(),
+            score: Some(1.0),
+            content: Some("{}".to_string()),
+            highlights: None,
+        }];
 
         let retry_query = create_retry_query(&original_query, &partial_hits);
         assert_eq!(retry_query.page, Some(2));
@@ -504,14 +523,12 @@ mod tests {
             config: None,
         };
 
-        let partial_hits = vec![
-            SearchHit {
-                id: "doc1".to_string(),
-                score: Some(1.0),
-                content: Some("{}".to_string()),
-                highlights: None,
-            },
-        ];
+        let partial_hits = vec![SearchHit {
+            id: "doc1".to_string(),
+            score: Some(1.0),
+            content: Some("{}".to_string()),
+            highlights: None,
+        }];
 
         let retry_query = create_retry_query(&original_query, &partial_hits);
         assert_eq!(retry_query.offset, Some(21));
@@ -519,8 +536,14 @@ mod tests {
 
     #[test]
     fn test_extract_field_from_ranking() {
-        assert_eq!(extract_field_from_ranking("desc(price)"), Some("price".to_string()));
-        assert_eq!(extract_field_from_ranking("asc(created_at)"), Some("created_at".to_string()));
+        assert_eq!(
+            extract_field_from_ranking("desc(price)"),
+            Some("price".to_string())
+        );
+        assert_eq!(
+            extract_field_from_ranking("asc(created_at)"),
+            Some("created_at".to_string())
+        );
         assert_eq!(extract_field_from_ranking("invalid"), None);
         assert_eq!(extract_field_from_ranking("desc()"), Some("".to_string()));
     }

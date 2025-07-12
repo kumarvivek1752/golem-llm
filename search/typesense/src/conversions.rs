@@ -415,7 +415,10 @@ mod tests {
         let typesense_doc = doc_to_typesense_document(doc).unwrap();
         assert_eq!(typesense_doc.fields.get("id").unwrap(), "test-id");
         assert_eq!(typesense_doc.fields.get("title").unwrap(), "Test Document");
-        assert_eq!(typesense_doc.fields.get("content").unwrap(), "This is a test");
+        assert_eq!(
+            typesense_doc.fields.get("content").unwrap(),
+            "This is a test"
+        );
     }
 
     #[test]
@@ -427,15 +430,23 @@ mod tests {
 
         let result = doc_to_typesense_document(doc);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Failed to parse document content as JSON"));
+        assert!(result
+            .unwrap_err()
+            .contains("Failed to parse document content as JSON"));
     }
 
     #[test]
     fn test_typesense_document_to_doc() {
         let mut fields = Map::new();
         fields.insert("id".to_string(), Value::String("test-id".to_string()));
-        fields.insert("title".to_string(), Value::String("Test Document".to_string()));
-        fields.insert("content".to_string(), Value::String("This is a test".to_string()));
+        fields.insert(
+            "title".to_string(),
+            Value::String("Test Document".to_string()),
+        );
+        fields.insert(
+            "content".to_string(),
+            Value::String("This is a test".to_string()),
+        );
 
         let typesense_doc = TypesenseDocument { fields };
         let doc = _typesense_document_to_doc(typesense_doc);
@@ -476,16 +487,28 @@ mod tests {
 
         let typesense_query = search_query_to_typesense_query(search_query);
         assert_eq!(typesense_query.q, "test query");
-        assert_eq!(typesense_query.filter_by, Some("category:electronics && price:>100".to_string()));
+        assert_eq!(
+            typesense_query.filter_by,
+            Some("category:electronics && price:>100".to_string())
+        );
         assert_eq!(typesense_query.sort_by, Some("price:desc".to_string()));
         assert_eq!(typesense_query.facet_by, Some("category,brand".to_string()));
         assert_eq!(typesense_query.page, Some(1));
         assert_eq!(typesense_query.per_page, Some(20));
         assert_eq!(typesense_query.offset, Some(10));
-        assert_eq!(typesense_query.highlight_start_tag, Some("<mark>".to_string()));
-        assert_eq!(typesense_query.highlight_end_tag, Some("</mark>".to_string()));
+        assert_eq!(
+            typesense_query.highlight_start_tag,
+            Some("<mark>".to_string())
+        );
+        assert_eq!(
+            typesense_query.highlight_end_tag,
+            Some("</mark>".to_string())
+        );
         assert_eq!(typesense_query.snippet_threshold, Some(200));
-        assert_eq!(typesense_query.highlight_full_fields, Some("title,description".to_string()));
+        assert_eq!(
+            typesense_query.highlight_full_fields,
+            Some("title,description".to_string())
+        );
     }
 
     #[test]
@@ -506,15 +529,24 @@ mod tests {
                 boost_fields: vec![("title".to_string(), 2.0), ("description".to_string(), 1.5)],
                 exact_match_boost: Some(1.5),
                 language: None,
-                provider_params: Some(r#"{"exhaustive_search": true, "use_cache": false, "max_facet_values": 100}"#.to_string()),
+                provider_params: Some(
+                    r#"{"exhaustive_search": true, "use_cache": false, "max_facet_values": 100}"#
+                        .to_string(),
+                ),
             }),
         };
 
         let typesense_query = search_query_to_typesense_query(search_query);
-        assert_eq!(typesense_query.include_fields, Some("title,price".to_string()));
+        assert_eq!(
+            typesense_query.include_fields,
+            Some("title,price".to_string())
+        );
         assert_eq!(typesense_query.num_typos, Some("0".to_string()));
         assert_eq!(typesense_query.search_cutoff_ms, Some(5000));
-        assert_eq!(typesense_query.query_by, Some("title:2,description:1.5".to_string()));
+        assert_eq!(
+            typesense_query.query_by,
+            Some("title:2,description:1.5".to_string())
+        );
         assert_eq!(typesense_query.prioritize_exact_match, Some(true));
         assert_eq!(typesense_query.exhaustive_search, Some(true));
         assert_eq!(typesense_query.use_cache, Some(false));
@@ -564,15 +596,27 @@ mod tests {
         let typesense_schema = schema_to_typesense_schema(schema, "test_collection");
         assert_eq!(typesense_schema.name, "test_collection");
         assert_eq!(typesense_schema.fields.len(), 4);
-        
-        let title_field = typesense_schema.fields.iter().find(|f| f.name == "title").unwrap();
+
+        let title_field = typesense_schema
+            .fields
+            .iter()
+            .find(|f| f.name == "title")
+            .unwrap();
         assert_eq!(title_field.field_type, "string");
         assert_eq!(title_field.index, Some(true));
-        
-        let category_field = typesense_schema.fields.iter().find(|f| f.name == "category").unwrap();
+
+        let category_field = typesense_schema
+            .fields
+            .iter()
+            .find(|f| f.name == "category")
+            .unwrap();
         assert_eq!(category_field.facet, Some(true));
-        
-        let price_field = typesense_schema.fields.iter().find(|f| f.name == "price").unwrap();
+
+        let price_field = typesense_schema
+            .fields
+            .iter()
+            .find(|f| f.name == "price")
+            .unwrap();
         assert_eq!(price_field.field_type, "float");
         assert_eq!(price_field.sort, Some(true));
         assert_eq!(price_field.index, Some(false));
@@ -612,10 +656,10 @@ mod tests {
         let schema_field = collection_field_to_schema_field(collection_field);
         assert_eq!(schema_field.name, "test_field");
         assert_eq!(schema_field.field_type, FieldType::Float);
-        assert_eq!(schema_field.required, true);
-        assert_eq!(schema_field.facet, true);
-        assert_eq!(schema_field.sort, true);
-        assert_eq!(schema_field.index, false);
+        assert!(schema_field.required);
+        assert!(schema_field.facet);
+        assert!(schema_field.sort);
+        assert!(!schema_field.index);
     }
 
     #[test]
@@ -649,28 +693,34 @@ mod tests {
         let schema = _typesense_schema_to_schema(typesense_schema);
         assert_eq!(schema.primary_key, Some("price".to_string()));
         assert_eq!(schema.fields.len(), 2);
-        
+
         let title_field = schema.fields.iter().find(|f| f.name == "title").unwrap();
         assert_eq!(title_field.field_type, FieldType::Text);
-        assert_eq!(title_field.required, false);
-        assert_eq!(title_field.index, true);
-        
+        assert!(!title_field.required);
+        assert!(title_field.index);
+
         let price_field = schema.fields.iter().find(|f| f.name == "price").unwrap();
         assert_eq!(price_field.field_type, FieldType::Float);
-        assert_eq!(price_field.required, true);
-        assert_eq!(price_field.facet, true);
-        assert_eq!(price_field.sort, true);
+        assert!(price_field.required);
+        assert!(price_field.facet);
+        assert!(price_field.sort);
     }
 
     #[test]
     fn test_typesense_response_to_search_results() {
         let mut hit1 = Map::new();
         hit1.insert("id".to_string(), Value::String("doc1".to_string()));
-        hit1.insert("title".to_string(), Value::String("Test Document 1".to_string()));
+        hit1.insert(
+            "title".to_string(),
+            Value::String("Test Document 1".to_string()),
+        );
 
         let mut hit2 = Map::new();
         hit2.insert("id".to_string(), Value::String("doc2".to_string()));
-        hit2.insert("title".to_string(), Value::String("Test Document 2".to_string()));
+        hit2.insert(
+            "title".to_string(),
+            Value::String("Test Document 2".to_string()),
+        );
 
         let typesense_response = SearchResponse {
             hits: vec![
@@ -700,24 +750,22 @@ mod tests {
             },
             search_time_ms: 5,
             search_cutoff: Some(false),
-            facet_counts: Some(vec![
-                FacetCount {
-                    field_name: "category".to_string(),
-                    counts: vec![
-                        FacetValue {
-                            count: 1,
-                            highlighted: Some("electronics".to_string()),
-                            value: Value::String("electronics".to_string()),
-                        },
-                        FacetValue {
-                            count: 1,
-                            highlighted: Some("books".to_string()),
-                            value: Value::String("books".to_string()),
-                        },
-                    ],
-                    stats: None,
-                },
-            ]),
+            facet_counts: Some(vec![FacetCount {
+                field_name: "category".to_string(),
+                counts: vec![
+                    FacetValue {
+                        count: 1,
+                        highlighted: Some("electronics".to_string()),
+                        value: Value::String("electronics".to_string()),
+                    },
+                    FacetValue {
+                        count: 1,
+                        highlighted: Some("books".to_string()),
+                        value: Value::String("books".to_string()),
+                    },
+                ],
+                stats: None,
+            }]),
         };
 
         let search_results = typesense_response_to_search_results(typesense_response);
@@ -737,11 +785,17 @@ mod tests {
     fn test_typesense_hit_to_search_hit() {
         let mut document = Map::new();
         document.insert("id".to_string(), Value::String("doc1".to_string()));
-        document.insert("title".to_string(), Value::String("Test Document".to_string()));
+        document.insert(
+            "title".to_string(),
+            Value::String("Test Document".to_string()),
+        );
 
         let highlight = {
             let mut h = Map::new();
-            h.insert("title".to_string(), Value::String("Test <mark>Document</mark>".to_string()));
+            h.insert(
+                "title".to_string(),
+                Value::String("Test <mark>Document</mark>".to_string()),
+            );
             h
         };
 
@@ -766,7 +820,10 @@ mod tests {
     fn test_typesense_hit_to_search_hit_nested_document() {
         let mut nested_doc = Map::new();
         nested_doc.insert("id".to_string(), Value::String("doc1".to_string()));
-        nested_doc.insert("title".to_string(), Value::String("Test Document".to_string()));
+        nested_doc.insert(
+            "title".to_string(),
+            Value::String("Test Document".to_string()),
+        );
 
         let mut document = Map::new();
         document.insert("document".to_string(), Value::Object(nested_doc));
@@ -792,16 +849,20 @@ mod tests {
     fn test_typesense_hit_with_highlights_array() {
         let mut document = Map::new();
         document.insert("id".to_string(), Value::String("doc1".to_string()));
-        document.insert("title".to_string(), Value::String("Test Document".to_string()));
+        document.insert(
+            "title".to_string(),
+            Value::String("Test Document".to_string()),
+        );
 
-        let highlights = vec![
-            Value::Object({
-                let mut h = Map::new();
-                h.insert("field".to_string(), Value::String("title".to_string()));
-                h.insert("snippet".to_string(), Value::String("Test <mark>Document</mark>".to_string()));
-                h
-            })
-        ];
+        let highlights = vec![Value::Object({
+            let mut h = Map::new();
+            h.insert("field".to_string(), Value::String("title".to_string()));
+            h.insert(
+                "snippet".to_string(),
+                Value::String("Test <mark>Document</mark>".to_string()),
+            );
+            h
+        })];
 
         let typesense_hit = TypesenseSearchHit {
             document,

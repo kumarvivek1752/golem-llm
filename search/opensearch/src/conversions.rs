@@ -473,14 +473,12 @@ mod tests {
             config: None,
         };
 
-        let partial_hits = vec![
-            SearchHit {
-                id: "doc1".to_string(),
-                score: Some(1.0),
-                content: Some("{}".to_string()),
-                highlights: None,
-            },
-        ];
+        let partial_hits = vec![SearchHit {
+            id: "doc1".to_string(),
+            score: Some(1.0),
+            content: Some("{}".to_string()),
+            highlights: None,
+        }];
 
         let retry_query = create_retry_query(&original_query, &partial_hits);
         assert_eq!(retry_query.offset, Some(21)); // 20 + 1 hit received

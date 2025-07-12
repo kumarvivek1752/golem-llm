@@ -443,8 +443,10 @@ pub fn build_bulk_delete_operations(index_name: &str, ids: &[String]) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::{
+        ElasticsearchHit, ElasticsearchHits, ElasticsearchSearchResponse, ElasticsearchTotal,
+    };
     use golem_search::golem::search::types::{HighlightConfig, SearchConfig};
-    use crate::client::{ElasticsearchHit, ElasticsearchHits, ElasticsearchSearchResponse, ElasticsearchTotal};
 
     #[test]
     fn test_doc_to_elasticsearch_document() {
@@ -481,7 +483,9 @@ mod tests {
 
         let result = doc_to_elasticsearch_document(doc);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid JSON in document content"));
+        assert!(result
+            .unwrap_err()
+            .contains("Invalid JSON in document content"));
     }
 
     #[test]
@@ -569,7 +573,10 @@ mod tests {
 
         let es_query = search_query_to_elasticsearch_query(search_query);
         assert!(es_query._source.is_some());
-        assert_eq!(es_query._source.unwrap(), serde_json::json!(["title", "price"]));
+        assert_eq!(
+            es_query._source.unwrap(),
+            serde_json::json!(["title", "price"])
+        );
     }
 
     #[test]
@@ -583,15 +590,13 @@ mod tests {
                     relation: "eq".to_string(),
                 },
                 max_score: Some(1.0),
-                hits: vec![
-                    ElasticsearchHit {
-                        index: "test-index".to_string(),
-                        id: "doc1".to_string(),
-                        score: Some(1.0),
-                        source: Some(serde_json::json!({"title": "Test Document"})),
-                        highlight: Some(serde_json::json!({"title": ["Test <em>Document</em>"]})),
-                    },
-                ],
+                hits: vec![ElasticsearchHit {
+                    index: "test-index".to_string(),
+                    id: "doc1".to_string(),
+                    score: Some(1.0),
+                    source: Some(serde_json::json!({"title": "Test Document"})),
+                    highlight: Some(serde_json::json!({"title": ["Test <em>Document</em>"]})),
+                }],
             },
             aggregations: Some(serde_json::json!({"category": {"buckets": []}})),
         };

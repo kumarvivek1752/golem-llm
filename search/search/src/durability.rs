@@ -746,7 +746,9 @@ mod durable_impl {
             roundtrip_test(SearchError::IndexNotFound);
             roundtrip_test(SearchError::InvalidQuery("invalid syntax".to_string()));
             roundtrip_test(SearchError::Unsupported);
-            roundtrip_test(SearchError::Internal("database connection failed".to_string()));
+            roundtrip_test(SearchError::Internal(
+                "database connection failed".to_string(),
+            ));
             roundtrip_test(SearchError::Timeout);
             roundtrip_test(SearchError::RateLimited);
         }
@@ -755,7 +757,9 @@ mod durable_impl {
         fn doc_roundtrip() {
             let doc = Doc {
                 id: "test-id-123".to_string(),
-                content: r#"{"title": "Test Document", "author": "John Doe", "tags": ["rust", "wasm"]}"#.to_string(),
+                content:
+                    r#"{"title": "Test Document", "author": "John Doe", "tags": ["rust", "wasm"]}"#
+                        .to_string(),
             };
             roundtrip_test(doc);
         }
@@ -784,10 +788,7 @@ mod durable_impl {
         fn search_config_roundtrip() {
             let config = SearchConfig {
                 timeout_ms: Some(5000),
-                boost_fields: vec![
-                    ("title".to_string(), 2.0),
-                    ("content".to_string(), 1.0),
-                ],
+                boost_fields: vec![("title".to_string(), 2.0), ("content".to_string(), 1.0)],
                 attributes_to_retrieve: vec!["id".to_string(), "title".to_string()],
                 language: Some("en".to_string()),
                 typo_tolerance: Some(true),
@@ -857,7 +858,9 @@ mod durable_impl {
             let hit = SearchHit {
                 id: "doc-123".to_string(),
                 score: Some(0.95),
-                content: Some(r#"{"title": "Rust Programming", "content": "A guide to Rust"}"#.to_string()),
+                content: Some(
+                    r#"{"title": "Rust Programming", "content": "A guide to Rust"}"#.to_string(),
+                ),
                 highlights: Some(r#"{"title": ["<em>Rust</em> Programming"]}"#.to_string()),
             };
             roundtrip_test(hit);
@@ -1015,7 +1018,10 @@ mod durable_impl {
         #[test]
         fn retry_query_logic_test() {
             // Test the retry query logic directly without implementing the full trait
-            fn test_retry_query(original_query: &SearchQuery, partial_hits: &[SearchHit]) -> SearchQuery {
+            fn test_retry_query(
+                original_query: &SearchQuery,
+                partial_hits: &[SearchHit],
+            ) -> SearchQuery {
                 let mut retry_query = original_query.clone();
 
                 // If we have partial results, we might want to exclude already seen document IDs
@@ -1028,7 +1034,7 @@ mod durable_impl {
 
                 retry_query
             }
-            
+
             let original_query = SearchQuery {
                 q: Some("test".to_string()),
                 filters: vec![],
@@ -1077,7 +1083,7 @@ mod durable_impl {
             // These are type aliases for strings, but test them anyway
             let index_name: IndexName = "test-index".to_string();
             let document_id: DocumentId = "doc-123".to_string();
-            
+
             assert_eq!(index_name, "test-index");
             assert_eq!(document_id, "doc-123");
         }
@@ -1133,7 +1139,10 @@ mod durable_impl {
                     language: Some("en-US".to_string()),
                     typo_tolerance: Some(true),
                     exact_match_boost: Some(10.0),
-                    provider_params: Some(r#"{"index_settings": {"similarity": "BM25", "k1": 1.5, "b": 0.75}}"#.to_string()),
+                    provider_params: Some(
+                        r#"{"index_settings": {"similarity": "BM25", "k1": 1.5, "b": 0.75}}"#
+                            .to_string(),
+                    ),
                 }),
             };
             roundtrip_test(complex_query);
