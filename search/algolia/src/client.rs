@@ -90,7 +90,6 @@ impl AlgoliaSearchApi {
         trace!("Listing indexes");
 
         let url = format!("{}/1/indexes", self.write_url);
-        println!("[Algolia] list_indexes URL: {}", url);
 
         let response = self
             .create_request(Method::GET, &url)
@@ -233,7 +232,6 @@ impl AlgoliaSearchApi {
             Ok(resp) => parse_response(resp),
             Err(e) => {
                 let error_msg = format!("Failed to search: {}: {}", url, e);
-                println!("[Algolia] search error: {}", error_msg);
                 Err(internal_error(error_msg))
             }
         }
@@ -284,26 +282,22 @@ impl AlgoliaSearchApi {
                 Ok(resp) => {
                     let body_str = match resp.text() {
                         Ok(s) => s,
-                        Err(e) => {
-                            println!("[Algolia] Failed to read task status response body: {}", e);
+                        Err(_e) => {
                             continue;
                         }
                     };
                     let body: serde_json::Value = match serde_json::from_str(&body_str) {
                         Ok(b) => b,
-                        Err(e) => {
-                            println!("[Algolia] Failed to parse task status json: {}. Body: {}", e, body_str);
+                        Err(_e) => {
                             continue;
                         }
                     };
-                    println!("[Algolia] Task status response: {:?}", body);
                     if body.get("status").and_then(|s| s.as_str()) == Some("published") {
-                        println!("[Algolia] Task {} is published.", task_id);
                         return Ok(());
                     }
                 }
                 Err(e) => {
-                    println!("[Algolia] Error waiting for task: {:?}", e);
+                    eprintln!("[Algolia] Error waiting for task: {:?}", e);
                 }
             }
             std::thread::sleep(std::time::Duration::from_millis(500));

@@ -30,11 +30,6 @@ impl TypesenseSearchApi {
     }
 
     fn create_request(&self, method: Method, url: &str) -> RequestBuilder {
-        println!("[Typesense] HTTP {} {}", method, url);
-        println!(
-            "[Typesense] Headers: X-TYPESENSE-API-KEY={}...",
-            &self.api_key[..4.min(self.api_key.len())]
-        );
 
         self.client
             .request(method, url)
@@ -46,8 +41,6 @@ impl TypesenseSearchApi {
         trace!("Creating collection: {collection_name}");
         
         let url = format!("{}/collections", self.base_url);
-
-        println!("json : {:?}", serde_json::to_string(schema).unwrap_or_default());
         
         let response = self
             .create_request(Method::POST, &url)
@@ -246,13 +239,11 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, 
 
 fn parse_bulk_import_response(response: Response) -> Result<IndexDocumentsResponse, SearchError> {
     let status = response.status();
-    println!("[Typesense] Response status: {}", status);
     
     if status.is_success() {
         let body_str = response
             .text()
             .map_err(|err| from_reqwest_error("Failed to read response", err))?;
-        println!("[Typesense] Success response body: {}", body_str);
         
         let lines: Vec<&str> = body_str.trim().split('\n').collect();
         let mut success_count = 0;
@@ -279,13 +270,11 @@ fn parse_bulk_import_response(response: Response) -> Result<IndexDocumentsRespon
             num_imported: Some(success_count),
         };
         
-        println!("[Typesense] Parsed bulk import response: {response:?}");
         Ok(response)
     } else {
-        let error_body = response
+        let _error_body = response
             .text()
             .map_err(|err| from_reqwest_error("Failed to receive error response body", err))?;
-        println!("[Typesense] Error response body: {}", error_body);
         
         Err(search_error_from_status(status))
     }

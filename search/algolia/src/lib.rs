@@ -130,7 +130,6 @@ impl Guest for AlgoliaComponent {
         
         match client.delete_index(&name) {
             Ok(response) => {
-                println!("[Algolia] delete_index successful - task_id: {}, deleted_at: {}", response.task_id, response.deleted_at);
                 let _ = response;
                 Ok(())
             },
@@ -158,7 +157,6 @@ impl Guest for AlgoliaComponent {
         
         match client.save_object(&index, &algolia_object) {
             Ok(response) => {
-                println!("[Algolia] upsert successful - task_id: {}, object_id: {}", response.task_id, response.object_id);
                 let _ = response;
                 Ok(())
             },
@@ -180,7 +178,6 @@ impl Guest for AlgoliaComponent {
         
         match client.save_objects(&index, &algolia_objects) {
             Ok(response) => {
-                println!("[Algolia] upsert_many successful - task_id: {}, object_ids: {:?}", response.task_id, response.object_ids);
                 let _ = response;
                 Ok(())
             },
@@ -195,7 +192,6 @@ impl Guest for AlgoliaComponent {
         
         match client.delete_object(&index, &id) {
             Ok(response) => {
-                println!("[Algolia] delete successful - task_id: {}, deleted_at: {}", response.task_id, response.deleted_at);
                 let _ = response;
                 Ok(())
             },
@@ -210,7 +206,6 @@ impl Guest for AlgoliaComponent {
         
         match client.delete_objects(&index, &ids) {
             Ok(response) => {
-                println!("[Algolia] delete_many successful - task_id: {}, object_ids: {:?}", response.task_id, response.object_ids);
                 let _ = response;
                 Ok(())
             },
@@ -270,7 +265,6 @@ impl Guest for AlgoliaComponent {
     client
         .set_settings(&index, &settings)
         .map_err(|e| {
-            println!("[Algolia] set_settings failed: {}", e);
             e
         })?;
 
