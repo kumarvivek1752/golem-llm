@@ -138,6 +138,7 @@ impl HttpConnector for SharedWasiConnector {
 
 struct BodyReader {
     body: SdkBody,
+    position: usize,
 }
 
 impl From<SdkBody> for BodyReader {
@@ -148,16 +149,25 @@ impl From<SdkBody> for BodyReader {
 
 impl BodyReader {
     fn new(body: SdkBody) -> Self {
-        Self { body }
+        Self { body, position: 0 }
     }
 }
 
 impl Read for BodyReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let bytes = self.body.bytes();
+        let body_bytes = self.body.bytes();
 
-        match bytes {
-            Some(mut bytes) => bytes.read(buf),
+        match body_bytes {
+            Some(bytes) => {
+                if self.position >= bytes.len() {
+                    return Ok(0); // EOF
+                }
+                let remaining = &bytes[self.position..];
+                let amt = std::cmp::min(buf.len(), remaining.len());
+                buf[..amt].copy_from_slice(&remaining[..amt]);
+                self.position += amt;
+                Ok(amt)
+            }
             None => Ok(0),
         }
     }
