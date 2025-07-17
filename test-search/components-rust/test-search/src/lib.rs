@@ -194,6 +194,8 @@ impl Guest for Component {
             Err(e) => results.push(format!("✗ Index deletion failed: {:?}", e)),
         }
 
+        // Cleanup
+        core::delete_index(&index_name).ok();
         results.join("\n")
     }
 

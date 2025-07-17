@@ -316,5 +316,4 @@ type DurableElasticsearchComponent = DurableSearch<ElasticsearchComponent>;
 
 golem_search::export_search!(DurableElasticsearchComponent with_types_in golem_search);
 
-// test 4
 // streaming

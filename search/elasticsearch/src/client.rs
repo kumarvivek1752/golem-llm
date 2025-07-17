@@ -275,10 +275,20 @@ impl ElasticsearchApi {
 
         let url = format!("{}/_bulk", self.base_url);
 
-        let response = self
-            .create_request(Method::POST, &url)
+        // Building request without create_request to avoid Content-Type conflicts
+        let mut builder = self.client
+            .post(&url)
             .header("Content-Type", "application/x-ndjson")
-            .body(operations.to_string())
+            .body(operations.to_string());
+
+        // Add authentication
+        if let Some(api_key) = &self.api_key {
+            builder = builder.header("Authorization", format!("ApiKey {}", api_key));
+        } else if let (Some(username), Some(password)) = (&self.username, &self.password) {
+            builder = builder.basic_auth(username, Some(password));
+        }
+
+        let response = builder
             .send()
             .map_err(|e| internal_error(format!("Failed to perform bulk operation: {}", e)))?;
 
