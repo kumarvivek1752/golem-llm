@@ -149,6 +149,7 @@ jobs:
           golem-cli worker invoke test:llm/ollama-1 test5
           golem-cli worker invoke test:llm/ollama-1 test6
           golem-cli worker invoke test:llm/ollama-1 test7
+          golem-cli worker invoke test:llm/ollama-1 test8
   publish-all:
     needs:
       - tests
