@@ -148,6 +148,7 @@ jobs:
           golem worker invoke test:llm/ollama-1 test5 | grep -v "ERROR: " 
           golem worker invoke test:llm/ollama-1 test6 | grep -v "ERROR: "
           golem worker invoke test:llm/ollama-1 test7 | grep -v "ERROR: "
+          golem worker invoke test:llm/ollama-1 test8 | grep -v "ERROR: "
   publish-all:
     needs:
       - tests
