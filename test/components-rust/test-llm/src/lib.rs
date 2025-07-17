@@ -153,7 +153,7 @@ impl Guest for Component {
             }
             llm::ChatEvent::Error(error) => {
                 println!(
-                    "ERROR 1: {:?} {} ({})",
+                    "ERROR: (1) {:?} {} ({})",
                     error.code,
                     error.message,
                     error.provider_error_json.unwrap_or_default()
@@ -195,7 +195,7 @@ impl Guest for Component {
                 }
                 llm::ChatEvent::Error(error) => {
                     format!(
-                        "ERROR 2: {:?} {} ({})",
+                        "ERROR: (2) {:?} {} ({})",
                         error.code,
                         error.message,
                         error.provider_error_json.unwrap_or_default()
