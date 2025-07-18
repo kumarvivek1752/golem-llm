@@ -276,7 +276,8 @@ impl ElasticsearchApi {
         let url = format!("{}/_bulk", self.base_url);
 
         // Building request without create_request to avoid Content-Type conflicts
-        let mut builder = self.client
+        let mut builder = self
+            .client
             .post(&url)
             .header("Content-Type", "application/x-ndjson")
             .body(operations.to_string());
