@@ -2,7 +2,8 @@ use crate::client::OpenSearchApi;
 use crate::conversions::{
     create_retry_query, doc_to_opensearch_document, opensearch_document_to_doc,
     opensearch_mappings_to_schema, opensearch_response_to_search_results,
-    schema_to_opensearch_settings, search_query_to_opensearch_request,
+    opensearch_scroll_response_to_search_results, schema_to_opensearch_settings,
+    search_query_to_opensearch_request,
 };
 use golem_rust::wasm_rpc::Pollable;
 use golem_search::config::with_config_keys;
@@ -12,20 +13,22 @@ use golem_search::golem::search::types::{
     Doc, DocumentId, IndexName, Schema, SearchError, SearchHit, SearchQuery, SearchResults,
 };
 use golem_search::LOGGING_STATE;
+use log::trace;
 use std::cell::{Cell, RefCell};
 
 mod client;
 mod conversions;
 
-/// Simple search stream implementation for OpenSearch
-/// Since OpenSearch doesn't have native streaming, we implement pagination-based streaming
+/// Uses scroll API for streaming large result sets with fallback to pagination
 struct OpenSearchSearchStream {
     client: OpenSearchApi,
     index_name: String,
     query: SearchQuery,
-    current_page: Cell<u32>,
+    scroll_id: RefCell<Option<String>>,
     finished: Cell<bool>,
-    last_response: RefCell<Option<SearchResults>>,
+    current_offset: Cell<u32>,
+    use_scroll: Cell<bool>,
+    scroll_failed: Cell<bool>,
 }
 
 impl OpenSearchSearchStream {
@@ -34,14 +37,102 @@ impl OpenSearchSearchStream {
             client,
             index_name,
             query: query.clone(),
-            current_page: Cell::new(query.offset.unwrap_or(0) / query.per_page.unwrap_or(20)),
+            scroll_id: RefCell::new(None),
             finished: Cell::new(false),
-            last_response: RefCell::new(None),
+            current_offset: Cell::new(query.offset.unwrap_or(0)),
+            use_scroll: Cell::new(true), // Start with scroll, fallback to pagination if needed
+            scroll_failed: Cell::new(false),
         }
     }
 
     pub fn subscribe(&self) -> Pollable {
         golem_rust::bindings::wasi::clocks::monotonic_clock::subscribe_duration(0)
+    }
+}
+
+impl OpenSearchSearchStream {
+    fn try_scroll_next(&self) -> Option<Option<Vec<SearchHit>>> {
+        if self.scroll_id.borrow().is_none() {
+            let mut os_query = search_query_to_opensearch_request(self.query.clone());
+            os_query.from = Some(0);
+            os_query.size = Some(self.query.per_page.unwrap_or(100)); // Larger page size for scroll
+
+            match self
+                .client
+                .search_with_scroll(&self.index_name, &os_query, "1m")
+            {
+                Ok(response) => {
+                    let scroll_id = response.scroll_id.clone();
+                    *self.scroll_id.borrow_mut() = Some(scroll_id);
+
+                    let search_results = opensearch_scroll_response_to_search_results(response);
+
+                    if search_results.hits.is_empty() {
+                        self.finished.set(true);
+                        return Some(Some(vec![]));
+                    }
+
+                    Some(Some(search_results.hits))
+                }
+                Err(e) => {
+                    trace!("Initial scroll search failed: {:?}", e);
+                    None
+                }
+            }
+        } else {
+            let scroll_id = self.scroll_id.borrow().clone().unwrap();
+
+            match self.client.scroll(&scroll_id, "1m") {
+                Ok(response) => {
+                    let search_results = opensearch_scroll_response_to_search_results(response);
+
+                    if search_results.hits.is_empty() {
+                        self.finished.set(true);
+                        return Some(Some(vec![]));
+                    }
+
+                    Some(Some(search_results.hits))
+                }
+                Err(e) => {
+                    trace!("Scroll continuation failed: {:?}", e);
+                    None
+                }
+            }
+        }
+    }
+
+    fn try_pagination_next(&self) -> Option<Vec<SearchHit>> {
+        let mut os_query = search_query_to_opensearch_request(self.query.clone());
+        os_query.from = Some(self.current_offset.get());
+        os_query.size = Some(self.query.per_page.unwrap_or(10));
+
+        match self.client.search(&self.index_name, &os_query) {
+            Ok(response) => {
+                let search_results = opensearch_response_to_search_results(response);
+
+                if search_results.hits.is_empty() {
+                    self.finished.set(true);
+                    return Some(vec![]);
+                }
+
+                let current_offset = self.current_offset.get();
+                let received_count = search_results.hits.len() as u32;
+                self.current_offset.set(current_offset + received_count);
+
+                if let Some(total) = search_results.total {
+                    if self.current_offset.get() >= total {
+                        self.finished.set(true);
+                    }
+                }
+
+                Some(search_results.hits)
+            }
+            Err(e) => {
+                trace!("Pagination search failed: {:?}", e);
+                self.finished.set(true);
+                Some(vec![])
+            }
+        }
     }
 }
 
@@ -51,46 +142,15 @@ impl GuestSearchStream for OpenSearchSearchStream {
             return Some(vec![]);
         }
 
-        let mut search_query = self.query.clone();
-        let current_page = self.current_page.get();
-        let limit = search_query.per_page.unwrap_or(20);
-
-        search_query.offset = Some(current_page * limit);
-
-        let opensearch_request = search_query_to_opensearch_request(search_query);
-
-        match self.client.search(&self.index_name, &opensearch_request) {
-            Ok(response) => {
-                let search_results = opensearch_response_to_search_results(response);
-
-                if search_results.hits.is_empty() {
-                    self.finished.set(true);
-                    return Some(vec![]);
-                }
-
-                if let Some(total) = search_results.total {
-                    let current_offset = current_page * limit;
-                    let next_offset = current_offset + limit;
-                    if next_offset >= total {
-                        self.finished.set(true);
-                    }
-                }
-
-                if (search_results.hits.len() as u32) < limit {
-                    self.finished.set(true);
-                }
-
-                self.current_page.set(current_page + 1);
-
-                let hits = search_results.hits.clone();
-                *self.last_response.borrow_mut() = Some(search_results);
-
-                Some(hits)
-            }
-            Err(_) => {
-                self.finished.set(true);
-                Some(vec![])
-            }
+        if self.use_scroll.get() && !self.scroll_failed.get() {
+            self.try_scroll_next().unwrap_or_else(|| {
+                trace!("Scroll failed, falling back to pagination");
+                self.scroll_failed.set(true);
+                self.use_scroll.set(false);
+                self.try_pagination_next()
+            })
+        } else {
+            self.try_pagination_next()
         }
     }
 
@@ -319,6 +379,15 @@ impl ExtendedGuest for OpenSearchComponent {
 
     fn subscribe(stream: &Self::SearchStream) -> Pollable {
         stream.subscribe()
+    }
+}
+
+impl Drop for OpenSearchSearchStream {
+    fn drop(&mut self) {
+        // Clear any active scroll when the stream is dropped
+        if let Some(scroll_id) = self.scroll_id.borrow().as_ref() {
+            let _ = self.client.clear_scroll(scroll_id);
+        }
     }
 }
 

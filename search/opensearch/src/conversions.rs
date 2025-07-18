@@ -1,5 +1,5 @@
 use crate::client::{
-    OpenSearchMappings, OpenSearchQuery, OpenSearchSearchResponse, OpenSearchSettings,
+    OpenSearchMappings, OpenSearchQuery, OpenSearchSearchResponse, OpenSearchScrollResponse, OpenSearchSettings,
 };
 use golem_search::golem::search::types::{
     Doc, FieldType, Schema, SchemaField, SearchHit, SearchQuery, SearchResults,
@@ -265,6 +265,18 @@ pub fn opensearch_response_to_search_results(response: OpenSearchSearchResponse)
         facets: Some(serde_json::to_string(&facets).unwrap_or_else(|_| "{}".to_string())),
         took_ms: Some(response.took),
     }
+}
+
+pub fn opensearch_scroll_response_to_search_results(response: OpenSearchScrollResponse) -> SearchResults {
+    // Convert scroll response to regular search response format
+    let regular_response = OpenSearchSearchResponse {
+        took: response.took,
+        timed_out: response.timed_out,
+        hits: response.hits,
+        aggregations: response.aggregations,
+    };
+    
+    opensearch_response_to_search_results(regular_response)
 }
 
 pub fn schema_to_opensearch_settings(schema: Schema) -> OpenSearchSettings {

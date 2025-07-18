@@ -155,6 +155,24 @@ pub struct OpenSearchError {
     pub status: Option<u32>,
 }
 
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct OpenSearchScrollResponse {
+    #[serde(rename = "_scroll_id")]
+    pub scroll_id: String,
+    pub took: u32,
+    pub timed_out: bool,
+    pub hits: OpenSearchHits,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aggregations: Option<Value>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ScrollRequest {
+    pub scroll: String,
+    pub scroll_id: String,
+}
+
 impl OpenSearchApi {
     pub fn new(
         base_url: String,
@@ -362,6 +380,77 @@ impl OpenSearchApi {
             .map_err(|e| internal_error(format!("Failed to search: {}", e)))?;
 
         parse_response(response)
+    }
+
+    pub fn search_with_scroll(
+        &self,
+        index_name: &str,
+        query: &OpenSearchQuery,
+        scroll_timeout: &str,
+    ) -> Result<OpenSearchScrollResponse, SearchError> {
+        trace!("Searching index {index_name} with scroll, timeout: {scroll_timeout}");
+
+        let url = format!(
+            "{}/{}/_search?scroll={}",
+            self.base_url, index_name, scroll_timeout
+        );
+
+        let response = self
+            .create_request(Method::POST, &url)
+            .json(query)
+            .send()
+            .map_err(|e| internal_error(format!("Failed to search with scroll: {}", e)))?;
+
+        parse_response(response)
+    }
+
+    pub fn scroll(
+        &self,
+        scroll_id: &str,
+        scroll_timeout: &str,
+    ) -> Result<OpenSearchScrollResponse, SearchError> {
+        trace!(
+            "Scrolling with ID: {} and timeout: {}",
+            scroll_id,
+            scroll_timeout
+        );
+
+        let url = format!("{}/_search/scroll", self.base_url);
+
+        let scroll_request = ScrollRequest {
+            scroll: scroll_timeout.to_string(),
+            scroll_id: scroll_id.to_string(),
+        };
+
+        let response = self
+            .create_request(Method::POST, &url)
+            .json(&scroll_request)
+            .send()
+            .map_err(|e| internal_error(format!("Failed to scroll: {}", e)))?;
+
+        parse_response(response)
+    }
+
+    pub fn clear_scroll(&self, scroll_id: &str) -> Result<(), SearchError> {
+        trace!("Clearing scroll with ID: {}", scroll_id);
+
+        let url = format!("{}/_search/scroll", self.base_url);
+
+        let clear_request = serde_json::json!({
+            "scroll_id": scroll_id
+        });
+
+        let response = self
+            .create_request(Method::DELETE, &url)
+            .json(&clear_request)
+            .send()
+            .map_err(|e| internal_error(format!("Failed to clear scroll: {}", e)))?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(search_error_from_status(response.status()))
+        }
     }
 
     pub fn get_mappings(&self, index_name: &str) -> Result<Value, SearchError> {
