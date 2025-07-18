@@ -13,8 +13,7 @@ use aws_sdk_bedrockruntime::{
     },
 };
 use golem_llm::golem::llm::llm;
-
-use crate::async_utils::get_async_runtime;
+use wstd::http;
 
 #[derive(Debug)]
 pub struct BedrockInput {
@@ -27,13 +26,13 @@ pub struct BedrockInput {
 }
 
 impl BedrockInput {
-    pub fn from(
+    pub async fn from(
         messages: Vec<llm::Message>,
         config: llm::Config,
         tool_results: Option<Vec<(llm::ToolCall, llm::ToolResult)>>,
     ) -> Result<Self, llm::Error> {
         let (mut user_messages, system_instructions) =
-            messages_to_bedrock_message_groups(messages)?;
+            messages_to_bedrock_message_groups(messages).await?;
 
         if let Some(tool_results) = tool_results {
             user_messages.extend(tool_call_results_to_bedrock_tools(tool_results)?);
@@ -138,7 +137,7 @@ fn tool_defs_to_bedrock_tool_config(
     ))
 }
 
-fn messages_to_bedrock_message_groups(
+async fn messages_to_bedrock_message_groups(
     messages: Vec<llm::Message>,
 ) -> Result<(Vec<bedrock::types::Message>, Vec<SystemContentBlock>), llm::Error> {
     let mut user_messages: Vec<bedrock::types::Message> = vec![];
@@ -152,7 +151,7 @@ fn messages_to_bedrock_message_groups(
                 }
             }
         } else {
-            let bedrock_content = content_part_to_bedrock_content_blocks(message.content)?;
+            let bedrock_content = content_part_to_bedrock_content_blocks(message.content).await?;
             user_messages.push(
                 bedrock::types::Message::builder()
                     .role(if message.role == llm::Role::User {
@@ -169,7 +168,7 @@ fn messages_to_bedrock_message_groups(
     Ok((user_messages, system_instructions))
 }
 
-fn content_part_to_bedrock_content_blocks(
+async fn content_part_to_bedrock_content_blocks(
     content_parts: Vec<llm::ContentPart>,
 ) -> Result<Vec<bedrock::types::ContentBlock>, llm::Error> {
     let mut bedrock_content_blocks: Vec<bedrock::types::ContentBlock> = vec![];
@@ -179,7 +178,7 @@ fn content_part_to_bedrock_content_blocks(
                 bedrock_content_blocks.push(bedrock::types::ContentBlock::Text(text.to_owned()));
             }
             llm::ContentPart::Image(image) => {
-                bedrock_content_blocks.push(image_ref_to_bedrock_image_content_block(image)?);
+                bedrock_content_blocks.push(image_ref_to_bedrock_image_content_block(image).await?);
             }
         }
     }
@@ -187,7 +186,7 @@ fn content_part_to_bedrock_content_blocks(
     Ok(bedrock_content_blocks)
 }
 
-fn image_ref_to_bedrock_image_content_block(
+async fn image_ref_to_bedrock_image_content_block(
     image_reference: llm::ImageReference,
 ) -> Result<bedrock::types::ContentBlock, llm::Error> {
     Ok(match image_reference {
@@ -198,12 +197,14 @@ fn image_ref_to_bedrock_image_content_block(
                 .build()
                 .unwrap(),
         ),
-        llm::ImageReference::Url(url) => get_image_content_block_from_url(url.url.as_ref())?,
+        llm::ImageReference::Url(url) => get_image_content_block_from_url(url.url.as_ref()).await?,
     })
 }
 
-fn get_image_content_block_from_url(url: &str) -> Result<bedrock::types::ContentBlock, llm::Error> {
-    let bytes = get_bytes_from_url(url)?;
+async fn get_image_content_block_from_url(
+    url: &str,
+) -> Result<bedrock::types::ContentBlock, llm::Error> {
+    let bytes = get_bytes_from_url(url).await?;
 
     let kind = infer::get(&bytes);
 
@@ -226,40 +227,37 @@ fn get_image_content_block_from_url(url: &str) -> Result<bedrock::types::Content
     ))
 }
 
-fn get_bytes_from_url(url: &str) -> Result<Vec<u8>, llm::Error> {
-    let runtime = get_async_runtime();
+async fn get_bytes_from_url(url: &str) -> Result<Vec<u8>, llm::Error> {
+    let client = http::Client::new();
 
-    runtime.block_on(|reactor| async {
-        let client = reqwest::Client::builder(reactor)
-            .build()
-            .expect("Failed to initialize HTTP client");
+    let request = http::Request::get(url)
+        .body(wstd::io::empty())
+        .expect("Valid request should be formed");
 
-        let response = client.get(url).send().await.map_err(|err| {
-            custom_error(
-                llm::ErrorCode::InvalidRequest,
-                format!("Could not read image bytes from url: {url}, cause: {err}"),
-            )
-        })?;
-        if !response.status().is_success() {
-            return Err(custom_error(
-                llm::ErrorCode::InvalidRequest,
-                format!(
-                    "Could not read image bytes from url: {url}, cause: request failed with status: {}",
-                    response.status()
-                ),
-            ));
-        }
+    let response = client.send(request).await.map_err(|err| {
+        custom_error(
+            llm::ErrorCode::InvalidRequest,
+            format!("Could not read image bytes from url: {url}, cause: {err}"),
+        )
+    })?;
+    if !response.status().is_success() {
+        return Err(custom_error(
+            llm::ErrorCode::InvalidRequest,
+            format!(
+                "Could not read image bytes from url: {url}, cause: request failed with status: {}",
+                response.status()
+            ),
+        ));
+    }
 
-        let bytes = response.bytes().await.map_err(|err| {
-            custom_error(
-                llm::ErrorCode::InvalidRequest,
-                format!("Could not read image bytes from url: {url}, cause: {err}"),
-            )
-        })?;
+    let bytes = response.into_body().bytes().await.map_err(|err| {
+        custom_error(
+            llm::ErrorCode::InvalidRequest,
+            format!("Could not read image bytes from url: {url}, cause: {err}"),
+        )
+    })?;
 
-        Ok(bytes.to_vec())
-
-    })
+    Ok(bytes.to_vec())
 }
 
 fn str_to_bedrock_mime_type(mime_type: &str) -> Result<ImageFormat, llm::Error> {

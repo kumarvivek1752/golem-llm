@@ -24,8 +24,8 @@ impl Guest for BedrockComponent {
 
         let runtime = get_async_runtime();
 
-        runtime.block_on(|reactor| async {
-            let bedrock = get_bedrock_client(reactor).await;
+        runtime.block_on(async {
+            let bedrock = get_bedrock_client().await;
 
             match bedrock {
                 Ok(client) => client.converse(messages, config, None).await,
@@ -43,8 +43,8 @@ impl Guest for BedrockComponent {
 
         let runtime = get_async_runtime();
 
-        runtime.block_on(|reactor| async {
-            let bedrock = get_bedrock_client(reactor).await;
+        runtime.block_on(async {
+            let bedrock = get_bedrock_client().await;
 
             match bedrock {
                 Ok(client) => client.converse(messages, config, Some(tool_results)).await,
@@ -67,8 +67,8 @@ impl ExtendedGuest for BedrockComponent {
 
         let runtime = get_async_runtime();
 
-        runtime.block_on(|reactor| async {
-            let bedrock = get_bedrock_client(reactor).await;
+        runtime.block_on(async {
+            let bedrock = get_bedrock_client().await;
 
             match bedrock {
                 Ok(client) => client.converse_stream(messages, config).await,
@@ -135,8 +135,8 @@ impl ExtendedGuest for BedrockComponent {
     }
 }
 
-async fn get_bedrock_client(reactor: wasi_async_runtime::Reactor) -> Result<Bedrock, llm::Error> {
-    Bedrock::new(reactor).await
+async fn get_bedrock_client() -> Result<Bedrock, llm::Error> {
+    Bedrock::new().await
 }
 
 type DurableBedrockComponent = DurableLLM<BedrockComponent>;

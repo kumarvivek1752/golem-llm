@@ -20,6 +20,7 @@ use golem_llm::{
 };
 use log::trace;
 use wasi::clocks::monotonic_clock;
+use wstd::runtime::Reactor;
 
 #[derive(Debug)]
 pub struct Bedrock {
@@ -27,14 +28,14 @@ pub struct Bedrock {
 }
 
 impl Bedrock {
-    pub async fn new(reactor: wasi_async_runtime::Reactor) -> Result<Self, llm::Error> {
+    pub async fn new() -> Result<Self, llm::Error> {
         let environment = BedrockEnvironment::load_from_env()?;
 
         let sdk_config = aws_config::defaults(BehaviorVersion::latest())
             .region(environment.aws_region())
-            .http_client(WasiClient::new(reactor.clone()))
+            .http_client(WasiClient::new())
             .credentials_provider(environment.aws_credentials())
-            .sleep_impl(WasiSleep::new(reactor))
+            .sleep_impl(WasiSleep::new())
             .load()
             .await;
         let client = bedrock::Client::new(&sdk_config);
@@ -47,7 +48,7 @@ impl Bedrock {
         config: llm::Config,
         tool_results: Option<Vec<(llm::ToolCall, llm::ToolResult)>>,
     ) -> llm::ChatEvent {
-        let bedrock_input = BedrockInput::from(messages, config, tool_results);
+        let bedrock_input = BedrockInput::from(messages, config, tool_results).await;
 
         match bedrock_input {
             Err(err) => llm::ChatEvent::Error(err),
@@ -84,7 +85,7 @@ impl Bedrock {
         messages: Vec<llm::Message>,
         config: llm::Config,
     ) -> BedrockChatStream {
-        let bedrock_input = BedrockInput::from(messages, config, None);
+        let bedrock_input = BedrockInput::from(messages, config, None).await;
 
         match bedrock_input {
             Err(err) => BedrockChatStream::failed(err),
@@ -166,28 +167,21 @@ impl BedrockEnvironment {
 }
 
 #[derive(Debug, Clone)]
-struct WasiSleep {
-    reactor: wasi_async_runtime::Reactor,
-}
+struct WasiSleep;
 
 impl WasiSleep {
-    fn new(reactor: wasi_async_runtime::Reactor) -> Self {
-        Self { reactor }
+    fn new() -> Self {
+        Self
     }
 }
 
 impl AsyncSleep for WasiSleep {
     fn sleep(&self, duration: std::time::Duration) -> Sleep {
-        let reactor = self.reactor.clone();
-        let fut = async move {
-            let nanos = duration.as_nanos() as u64;
-            let pollable = monotonic_clock::subscribe_duration(nanos);
+        let reactor = Reactor::current();
+        let nanos = duration.as_nanos() as u64;
+        let pollable = reactor.schedule(monotonic_clock::subscribe_duration(nanos));
 
-            reactor.wait_for(pollable).await;
-        };
+        let fut = pollable.wait_for();
         Sleep::new(Box::pin(UnsafeFuture::new(fut)))
     }
 }
-
-unsafe impl Send for WasiSleep {}
-unsafe impl Sync for WasiSleep {}

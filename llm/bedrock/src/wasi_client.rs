@@ -1,4 +1,4 @@
-use std::{io::Read, str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 use aws_sdk_bedrockruntime::{config, error::ConnectorError};
 use aws_smithy_runtime_api::{
@@ -8,21 +8,17 @@ use aws_smithy_runtime_api::{
     http::{Headers, Response, StatusCode},
 };
 use aws_smithy_types::body::SdkBody;
-use reqwest::{
-    header::{HeaderMap, HeaderName, HeaderValue},
-    Method,
-};
+use reqwest::Method;
+use wstd::http;
 
 use crate::async_utils::UnsafeFuture;
 
 #[derive(Debug)]
-pub struct WasiClient {
-    reactor: wasi_async_runtime::Reactor,
-}
+pub struct WasiClient;
 
 impl WasiClient {
-    pub fn new(reactor: wasi_async_runtime::Reactor) -> Self {
-        Self { reactor }
+    pub fn new() -> Self {
+        Self
     }
 }
 
@@ -32,11 +28,14 @@ impl config::HttpClient for WasiClient {
         settings: &HttpConnectorSettings,
         _components: &config::RuntimeComponents,
     ) -> SharedHttpConnector {
-        let client = reqwest::Client::builder(self.reactor.clone())
-            .connect_timeout(settings.connect_timeout())
-            .timeout(settings.read_timeout())
-            .build()
-            .expect("Valid http client configuration");
+        let mut client = http::Client::new();
+
+        if let Some(conn_timeout) = settings.connect_timeout() {
+            client.set_connect_timeout(conn_timeout);
+        }
+        if let Some(read_timeout) = settings.read_timeout() {
+            client.set_first_byte_timeout(read_timeout);
+        }
         let connector = SharedWasiConnector::new(client);
         SharedHttpConnector::new(connector)
     }
@@ -51,7 +50,7 @@ struct SharedWasiConnector {
 }
 
 impl SharedWasiConnector {
-    fn new(client: reqwest::Client) -> Self {
+    fn new(client: http::Client) -> Self {
         Self {
             inner: Arc::new(WasiConnector(client)),
         }
@@ -59,7 +58,7 @@ impl SharedWasiConnector {
 }
 
 #[derive(Debug)]
-struct WasiConnector(reqwest::Client);
+struct WasiConnector(http::Client);
 
 unsafe impl Send for WasiConnector {}
 unsafe impl Sync for WasiConnector {}
@@ -68,25 +67,23 @@ impl WasiConnector {
     async fn handle(
         &self,
         request: config::http::HttpRequest,
-    ) -> Result<reqwest::Response, ConnectorError> {
+    ) -> Result<http::Response<http::body::IncomingBody>, ConnectorError> {
         let method = Method::from_bytes(request.method().as_bytes()).expect("Valid http method");
         let url = request.uri().to_owned();
         let parts = request.into_parts();
 
-        let mut header_map = HeaderMap::new();
+        let mut request = http::Request::builder().uri(url).method(method);
 
         for header in parts.headers.iter() {
-            header_map.append(
-                HeaderName::from_str(header.0).expect("Valid http header name"),
-                HeaderValue::from_str(header.1).expect("Valid http header value"),
-            );
+            request = request.header(header.0, header.1);
         }
 
+        let request = request
+            .body(BodyReader::new(parts.body))
+            .expect("Valid request should be formed");
+
         self.0
-            .request(method, url)
-            .headers(header_map)
-            .body(reqwest::Body::new::<BodyReader>(parts.body.into()))
-            .send()
+            .send(request)
             .await
             .map_err(|e| ConnectorError::other(e.into(), None))
     }
@@ -105,6 +102,7 @@ impl HttpConnector for SharedWasiConnector {
             let extensions = response.extensions().clone();
 
             let body = response
+                .into_body()
                 .bytes()
                 .await
                 .map(|body| {
@@ -153,8 +151,23 @@ impl BodyReader {
     }
 }
 
-impl Read for BodyReader {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+impl http::Body for BodyReader {
+    fn len(&self) -> Option<usize> {
+        let body_bytes = self.body.bytes();
+
+        match body_bytes {
+            Some(bytes) => {
+                let total_length = bytes.len();
+
+                Some(total_length - self.position)
+            }
+            None => None,
+        }
+    }
+}
+
+impl wstd::io::AsyncRead for BodyReader {
+    async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let body_bytes = self.body.bytes();
 
         match body_bytes {

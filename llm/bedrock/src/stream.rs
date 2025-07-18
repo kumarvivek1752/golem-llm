@@ -55,7 +55,7 @@ impl BedrockChatStream {
         if let Some(stream) = self.stream_mut().as_mut() {
             let runtime = async_utils::get_async_runtime();
 
-            runtime.block_on(|_| async move {
+            runtime.block_on(async move {
                 let token = stream.recv().await;
                 log::trace!("Bedrock stream event: {token:?}");
 

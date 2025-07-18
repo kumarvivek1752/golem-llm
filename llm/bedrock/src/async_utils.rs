@@ -1,4 +1,5 @@
 use std::future::Future;
+use wstd::runtime;
 
 pub fn get_async_runtime() -> AsyncRuntime {
     AsyncRuntime
@@ -7,12 +8,11 @@ pub fn get_async_runtime() -> AsyncRuntime {
 pub struct AsyncRuntime;
 
 impl AsyncRuntime {
-    pub fn block_on<F, Fut>(self, f: F) -> Fut::Output
+    pub fn block_on<F>(self, f: F) -> F::Output
     where
-        F: FnOnce(wasi_async_runtime::Reactor) -> Fut,
-        Fut: Future,
+        F: Future,
     {
-        wasi_async_runtime::block_on(f)
+        runtime::block_on(f)
     }
 }
 
