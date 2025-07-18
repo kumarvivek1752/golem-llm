@@ -13,6 +13,7 @@ use golem_search::golem::search::types::{
     Doc, DocumentId, IndexName, Schema, SearchError, SearchHit, SearchQuery, SearchResults,
 };
 use golem_search::LOGGING_STATE;
+use log::trace;
 use std::cell::{Cell, RefCell};
 
 mod client;
@@ -26,6 +27,8 @@ struct ElasticsearchSearchStream {
     scroll_id: RefCell<Option<String>>,
     finished: Cell<bool>,
     current_offset: Cell<u32>,
+    use_scroll: Cell<bool>,
+    scroll_failed: Cell<bool>,
 }
 
 impl ElasticsearchSearchStream {
@@ -37,6 +40,8 @@ impl ElasticsearchSearchStream {
             scroll_id: RefCell::new(None),
             finished: Cell::new(false),
             current_offset: Cell::new(query.offset.unwrap_or(0)),
+            use_scroll: Cell::new(true), // Start with scroll, fallback to pagination if needed
+            scroll_failed: Cell::new(false),
         }
     }
 
@@ -51,52 +56,128 @@ impl GuestSearchStream for ElasticsearchSearchStream {
             return Some(vec![]);
         }
 
-        // For first request, use regular search with scroll
-        if self.scroll_id.borrow().is_none() {
-            let mut es_query = search_query_to_elasticsearch_query(self.query.clone());
-
-            es_query.from = Some(self.current_offset.get());
-            es_query.size = Some(self.query.per_page.unwrap_or(10));
-
-            let _url = format!("{}/_search?scroll=1m", self.index_name);
-
-            match self.client.search(&self.index_name, &es_query) {
-                Ok(response) => {
-                    let search_results = elasticsearch_response_to_search_results(response);
-
-                    if search_results.hits.is_empty() {
-                        self.finished.set(true);
-                        return Some(vec![]);
-                    }
-
-                    let current_offset = self.current_offset.get();
-                    let received_count = search_results.hits.len() as u32;
-                    self.current_offset.set(current_offset + received_count);
-
-                    if let Some(total) = search_results.total {
-                        if self.current_offset.get() >= total {
-                            self.finished.set(true);
-                        }
-                    }
-
-                    Some(search_results.hits)
-                }
-                Err(_) => {
-                    self.finished.set(true);
-                    Some(vec![])
-                }
-            }
+        if self.use_scroll.get() && !self.scroll_failed.get() {
+            self.try_scroll_next().unwrap_or_else(|| {
+                trace!("Scroll failed, falling back to pagination");
+                self.scroll_failed.set(true);
+                self.use_scroll.set(false);
+                self.try_pagination_next()
+            })
         } else {
-            // Continue with scroll
-            // Note: For simplicity, we're using pagination instead of true scroll API
-            // In a production implementation, you'd use Elasticsearch's scroll API
-            self.finished.set(true);
-            Some(vec![])
+            self.try_pagination_next()
         }
     }
 
     fn blocking_get_next(&self) -> Vec<SearchHit> {
         self.get_next().unwrap_or_default()
+    }
+}
+
+impl ElasticsearchSearchStream {
+    fn try_scroll_next(&self) -> Option<Option<Vec<SearchHit>>> {
+        if self.scroll_id.borrow().is_none() {
+            let mut es_query = search_query_to_elasticsearch_query(self.query.clone());
+            es_query.from = Some(0);
+            es_query.size = Some(self.query.per_page.unwrap_or(100)); // Larger page size for scroll
+
+            match self
+                .client
+                .search_with_scroll(&self.index_name, &es_query, "1m")
+            {
+                Ok(response) => {
+                    *self.scroll_id.borrow_mut() = Some(response.scroll_id);
+
+                    let search_results = elasticsearch_response_to_search_results(
+                        crate::client::ElasticsearchSearchResponse {
+                            took: response.took,
+                            timed_out: response.timed_out,
+                            hits: response.hits,
+                            aggregations: response.aggregations,
+                        },
+                    );
+
+                    if search_results.hits.is_empty() {
+                        self.finished.set(true);
+                        return Some(Some(vec![]));
+                    }
+
+                    Some(Some(search_results.hits))
+                }
+                Err(e) => {
+                    trace!("Initial scroll search failed: {:?}", e);
+                    None // Signal to fallback to pagination
+                }
+            }
+        } else {
+            let scroll_id = self.scroll_id.borrow().clone().unwrap();
+
+            match self.client.scroll(&scroll_id, "1m") {
+                Ok(response) => {
+                    *self.scroll_id.borrow_mut() = Some(response.scroll_id);
+
+                    let search_results = elasticsearch_response_to_search_results(
+                        crate::client::ElasticsearchSearchResponse {
+                            took: response.took,
+                            timed_out: response.timed_out,
+                            hits: response.hits,
+                            aggregations: response.aggregations,
+                        },
+                    );
+
+                    if search_results.hits.is_empty() {
+                        self.finished.set(true);
+
+                        if let Some(scroll_id) = self.scroll_id.borrow().as_ref() {
+                            let _ = self.client.clear_scroll(scroll_id);
+                        }
+                    }
+
+                    Some(Some(search_results.hits))
+                }
+                Err(e) => {
+                    trace!("Scroll continuation failed: {:?}", e);
+
+                    if let Some(scroll_id) = self.scroll_id.borrow().as_ref() {
+                        let _ = self.client.clear_scroll(scroll_id);
+                    }
+                    None
+                }
+            }
+        }
+    }
+
+    fn try_pagination_next(&self) -> Option<Vec<SearchHit>> {
+        let mut es_query = search_query_to_elasticsearch_query(self.query.clone());
+        es_query.from = Some(self.current_offset.get());
+        es_query.size = Some(self.query.per_page.unwrap_or(10));
+
+        match self.client.search(&self.index_name, &es_query) {
+            Ok(response) => {
+                let search_results = elasticsearch_response_to_search_results(response);
+
+                if search_results.hits.is_empty() {
+                    self.finished.set(true);
+                    return Some(vec![]);
+                }
+
+                let current_offset = self.current_offset.get();
+                let received_count = search_results.hits.len() as u32;
+                self.current_offset.set(current_offset + received_count);
+
+                if let Some(total) = search_results.total {
+                    if self.current_offset.get() >= total {
+                        self.finished.set(true);
+                    }
+                }
+
+                Some(search_results.hits)
+            }
+            Err(e) => {
+                trace!("Pagination search failed: {:?}", e);
+                self.finished.set(true);
+                Some(vec![])
+            }
+        }
     }
 }
 
@@ -309,6 +390,15 @@ impl ExtendedGuest for ElasticsearchComponent {
 
     fn subscribe(stream: &Self::SearchStream) -> Pollable {
         stream.subscribe()
+    }
+}
+
+impl Drop for ElasticsearchSearchStream {
+    fn drop(&mut self) {
+        // Clear any active scroll when the stream is dropped
+        if let Some(scroll_id) = self.scroll_id.borrow().as_ref() {
+            let _ = self.client.clear_scroll(scroll_id);
+        }
     }
 }
 
