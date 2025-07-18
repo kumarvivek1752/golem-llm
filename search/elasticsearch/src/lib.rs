@@ -405,5 +405,3 @@ impl Drop for ElasticsearchSearchStream {
 type DurableElasticsearchComponent = DurableSearch<ElasticsearchComponent>;
 
 golem_search::export_search!(DurableElasticsearchComponent with_types_in golem_search);
-
-// streaming
