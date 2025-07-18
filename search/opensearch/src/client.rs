@@ -1,11 +1,13 @@
+use golem_search::config::{get_max_retries_config, get_timeout_config};
 use golem_search::error::{from_reqwest_error, internal_error, search_error_from_status};
 use golem_search::golem::search::types::SearchError;
 use log::trace;
 use reqwest::{Client, Method, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use std::fmt::Debug;
+use std::time::Duration;
 
 /// The OpenSearch API client for managing indices and performing search
 /// Based on the OpenSearch REST API
@@ -16,6 +18,7 @@ pub struct OpenSearchApi {
     api_key: Option<String>,
     username: Option<String>,
     password: Option<String>,
+    max_retries: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -180,7 +183,11 @@ impl OpenSearchApi {
         password: Option<String>,
         api_key: Option<String>,
     ) -> Self {
+        let timeout_secs = get_timeout_config();
+        let max_retries = get_max_retries_config();
+
         let client = Client::builder()
+            .timeout(Duration::from_secs(timeout_secs))
             .build()
             .expect("Failed to initialize HTTP client");
 
@@ -190,7 +197,100 @@ impl OpenSearchApi {
             api_key,
             username,
             password,
+            max_retries,
         }
+    }
+
+    fn should_retry_error(&self, error: &reqwest::Error) -> bool {
+        error.is_timeout() || error.is_request()
+    }
+
+    fn calculate_backoff_delay(attempt: u32, is_rate_limited: bool) -> Duration {
+        let base_delay_ms = if is_rate_limited { 1000 } else { 200 }; // 1s for rate limit, 200ms for others
+        let max_delay_ms = 30000; // 30 seconds max
+
+        let delay_ms = std::cmp::min(max_delay_ms, base_delay_ms * (2_u64.pow(attempt)));
+
+        Duration::from_millis(delay_ms)
+    }
+
+    fn execute_with_retry_sync<F>(&self, operation: F) -> Result<Response, SearchError>
+    where
+        F: Fn() -> Result<Response, reqwest::Error> + Send + Sync,
+    {
+        let mut last_error = None;
+
+        for attempt in 0..=self.max_retries {
+            match operation() {
+                Ok(response) => {
+                    match response.status().as_u16() {
+                        429 => {
+                            // Rate limited - should retry with longer delay
+                            if attempt < self.max_retries {
+                                let delay = Self::calculate_backoff_delay(attempt, true);
+                                trace!(
+                                    "Rate limited (429), retrying in {:?} (attempt {}/{})",
+                                    delay,
+                                    attempt + 1,
+                                    self.max_retries + 1
+                                );
+                                std::thread::sleep(delay);
+                                continue;
+                            } else {
+                                return Ok(response);
+                            }
+                        }
+                        502..=504 => {
+                            // Server errors - should retry
+                            if attempt < self.max_retries {
+                                let delay = Self::calculate_backoff_delay(attempt, false);
+                                trace!(
+                                    "Server error ({}), retrying in {:?} (attempt {}/{})",
+                                    response.status().as_u16(),
+                                    delay,
+                                    attempt + 1,
+                                    self.max_retries + 1
+                                );
+                                std::thread::sleep(delay);
+                                continue;
+                            } else {
+                                return Ok(response);
+                            }
+                        }
+                        _ => return Ok(response),
+                    }
+                }
+                Err(e) => {
+                    last_error = Some(e);
+
+                    if let Some(ref error) = last_error {
+                        if self.should_retry_error(error) && attempt < self.max_retries {
+                            let is_rate_limited = error.status().is_some_and(|s| s.as_u16() == 429);
+                            let delay = Self::calculate_backoff_delay(attempt, is_rate_limited);
+
+                            trace!(
+                                "Request failed, retrying in {:?} (attempt {}/{}): {:?}",
+                                delay,
+                                attempt + 1,
+                                self.max_retries + 1,
+                                error
+                            );
+                            std::thread::sleep(delay);
+                        } else if !self.should_retry_error(error) {
+                            trace!("Request failed with non-retryable error: {:?}", error);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        let error = last_error.unwrap();
+        Err(internal_error(format!(
+            "Request failed after {} attempts: {}",
+            self.max_retries + 1,
+            error
+        )))
     }
 
     fn create_request(&self, method: Method, url: &str) -> RequestBuilder {
@@ -239,15 +339,15 @@ impl OpenSearchApi {
 
         let url = format!("{}/{}", self.base_url, index_name);
 
-        let mut request = self.create_request(Method::PUT, &url);
+        let response = self.execute_with_retry_sync(|| {
+            let mut request = self.create_request(Method::PUT, &url);
 
-        if let Some(settings) = settings {
-            request = request.json(&settings);
-        }
+            if let Some(ref settings) = settings {
+                request = request.json(settings);
+            }
 
-        let response = request
-            .send()
-            .map_err(|e| internal_error(format!("Failed to create index: {}", e)))?;
+            request.send()
+        })?;
 
         if response.status().is_success() {
             Ok(())
@@ -261,10 +361,8 @@ impl OpenSearchApi {
 
         let url = format!("{}/{}", self.base_url, index_name);
 
-        let response = self
-            .create_request(Method::DELETE, &url)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to delete index: {}", e)))?;
+        let response =
+            self.execute_with_retry_sync(|| self.create_request(Method::DELETE, &url).send())?;
 
         if response.status().is_success() {
             Ok(())
@@ -278,10 +376,8 @@ impl OpenSearchApi {
 
         let url = format!("{}/_cat/indices?format=json", self.base_url);
 
-        let response = self
-            .create_request(Method::GET, &url)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to list indices: {}", e)))?;
+        let response =
+            self.execute_with_retry_sync(|| self.create_request(Method::GET, &url).send())?;
 
         parse_response(response)
     }
@@ -296,11 +392,9 @@ impl OpenSearchApi {
 
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
 
-        let response = self
-            .create_request(Method::PUT, &url)
-            .json(document)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to index document: {}", e)))?;
+        let response = self.execute_with_retry_sync(|| {
+            self.create_request(Method::PUT, &url).json(document).send()
+        })?;
 
         if response.status().is_success() {
             Ok(())
@@ -314,11 +408,11 @@ impl OpenSearchApi {
 
         let url = format!("{}/_bulk", self.base_url);
 
-        let response = self
-            .create_request_with_content_type(Method::POST, &url, "application/x-ndjson")
-            .body(operations.to_string())
-            .send()
-            .map_err(|e| internal_error(format!("Failed to perform bulk operation: {}", e)))?;
+        let response = self.execute_with_retry_sync(|| {
+            self.create_request_with_content_type(Method::POST, &url, "application/x-ndjson")
+                .body(operations.to_string())
+                .send()
+        })?;
 
         parse_response(response)
     }
@@ -328,10 +422,8 @@ impl OpenSearchApi {
 
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
 
-        let response = self
-            .create_request(Method::DELETE, &url)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to delete document: {}", e)))?;
+        let response =
+            self.execute_with_retry_sync(|| self.create_request(Method::DELETE, &url).send())?;
 
         if response.status().is_success() {
             Ok(())
@@ -345,10 +437,8 @@ impl OpenSearchApi {
 
         let url = format!("{}/{}/_doc/{}", self.base_url, index_name, id);
 
-        let response = self
-            .create_request(Method::GET, &url)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to get document: {}", e)))?;
+        let response =
+            self.execute_with_retry_sync(|| self.create_request(Method::GET, &url).send())?;
 
         if response.status() == 404 {
             Ok(None)
@@ -373,11 +463,9 @@ impl OpenSearchApi {
 
         let url = format!("{}/{}/_search", self.base_url, index_name);
 
-        let response = self
-            .create_request(Method::POST, &url)
-            .json(query)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to search: {}", e)))?;
+        let response = self.execute_with_retry_sync(|| {
+            self.create_request(Method::POST, &url).json(query).send()
+        })?;
 
         parse_response(response)
     }
@@ -395,11 +483,9 @@ impl OpenSearchApi {
             self.base_url, index_name, scroll_timeout
         );
 
-        let response = self
-            .create_request(Method::POST, &url)
-            .json(query)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to search with scroll: {}", e)))?;
+        let response = self.execute_with_retry_sync(|| {
+            self.create_request(Method::POST, &url).json(query).send()
+        })?;
 
         parse_response(response)
     }
@@ -417,34 +503,33 @@ impl OpenSearchApi {
 
         let url = format!("{}/_search/scroll", self.base_url);
 
-        let scroll_request = ScrollRequest {
-            scroll: scroll_timeout.to_string(),
-            scroll_id: scroll_id.to_string(),
-        };
+        let response = self.execute_with_retry_sync(|| {
+            let scroll_request = ScrollRequest {
+                scroll: scroll_timeout.to_string(),
+                scroll_id: scroll_id.to_string(),
+            };
 
-        let response = self
-            .create_request(Method::POST, &url)
-            .json(&scroll_request)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to scroll: {}", e)))?;
+            self.create_request(Method::POST, &url)
+                .json(&scroll_request)
+                .send()
+        })?;
 
         parse_response(response)
     }
 
     pub fn clear_scroll(&self, scroll_id: &str) -> Result<(), SearchError> {
-        trace!("Clearing scroll with ID: {}", scroll_id);
+        trace!("Clearing scroll: {}", scroll_id);
 
         let url = format!("{}/_search/scroll", self.base_url);
-
-        let clear_request = serde_json::json!({
+        let request_body = json!({
             "scroll_id": scroll_id
         });
 
-        let response = self
-            .create_request(Method::DELETE, &url)
-            .json(&clear_request)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to clear scroll: {}", e)))?;
+        let response = self.execute_with_retry_sync(|| {
+            self.create_request(Method::DELETE, &url)
+                .json(&request_body)
+                .send()
+        })?;
 
         if response.status().is_success() {
             Ok(())
@@ -458,10 +543,8 @@ impl OpenSearchApi {
 
         let url = format!("{}/{}/_mapping", self.base_url, index_name);
 
-        let response = self
-            .create_request(Method::GET, &url)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to get mappings: {}", e)))?;
+        let response =
+            self.execute_with_retry_sync(|| self.create_request(Method::GET, &url).send())?;
 
         parse_response(response)
     }
@@ -475,11 +558,9 @@ impl OpenSearchApi {
 
         let url = format!("{}/{}/_mapping", self.base_url, index_name);
 
-        let response = self
-            .create_request(Method::PUT, &url)
-            .json(mappings)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to put mappings: {}", e)))?;
+        let response = self.execute_with_retry_sync(|| {
+            self.create_request(Method::PUT, &url).json(mappings).send()
+        })?;
 
         if response.status().is_success() {
             Ok(())

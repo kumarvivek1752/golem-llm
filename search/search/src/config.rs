@@ -41,3 +41,15 @@ pub fn with_config_keys<R>(keys: &[&str], callback: impl FnOnce(Vec<String>) -> 
     }
     callback(values)
 }
+
+pub fn get_timeout_config() -> u64 {
+    get_config_with_default("SEARCH_PROVIDER_TIMEOUT", "30")
+        .parse()
+        .unwrap_or(30)
+}
+
+pub fn get_max_retries_config() -> u32 {
+    get_config_with_default("SEARCH_PROVIDER_MAX_RETRIES", "3")
+        .parse()
+        .unwrap_or(3)
+}
