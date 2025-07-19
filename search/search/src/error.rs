@@ -39,8 +39,8 @@ pub fn search_error_from_status(status: StatusCode) -> SearchError {
             SearchError::Internal("Authentication failed".to_string())
         }
         _ if status.is_client_error() => {
-            SearchError::InvalidQuery(format!("Client error: {}", status))
+            SearchError::InvalidQuery(format!("Client error: {status}"))
         }
-        _ => SearchError::Internal(format!("Server error: {}", status)),
+        _ => SearchError::Internal(format!("Server error: {status}")),
     }
 }

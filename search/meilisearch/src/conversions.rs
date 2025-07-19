@@ -261,6 +261,7 @@ fn _convert_meilisearch_facets_to_golem(
 mod tests {
     use super::*;
     use golem_search::golem::search::types::{HighlightConfig, SearchConfig};
+    use serde_json::json;
 
     #[test]
     fn test_doc_to_meilisearch_document() {
@@ -290,16 +291,14 @@ mod tests {
 
     #[test]
     fn test_meilisearch_document_to_doc() {
-        let mut meilisearch_doc = JsonMap::new();
-        meilisearch_doc.insert("id".to_string(), JsonValue::String("test-id".to_string()));
-        meilisearch_doc.insert(
-            "title".to_string(),
-            JsonValue::String("Test Document".to_string()),
-        );
-        meilisearch_doc.insert(
-            "content".to_string(),
-            JsonValue::String("This is a test".to_string()),
-        );
+        let meilisearch_doc = json!({
+            "id": "test-id",
+            "title": "Test Document",
+            "content": "This is a test"
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         let doc = meilisearch_document_to_doc(meilisearch_doc);
         assert_eq!(doc.id, "test-id");
@@ -309,8 +308,12 @@ mod tests {
 
     #[test]
     fn test_meilisearch_document_to_doc_no_id() {
-        let mut meilisearch_doc = JsonMap::new();
-        meilisearch_doc.insert("title".to_string(), JsonValue::String("Test".to_string()));
+        let meilisearch_doc = json!({
+            "title": "Test"
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         let doc = meilisearch_document_to_doc(meilisearch_doc);
         assert_eq!(doc.id, "unknown");
@@ -318,12 +321,13 @@ mod tests {
 
     #[test]
     fn test_meilisearch_document_to_doc_numeric_id() {
-        let mut meilisearch_doc = JsonMap::new();
-        meilisearch_doc.insert(
-            "id".to_string(),
-            JsonValue::Number(serde_json::Number::from(123)),
-        );
-        meilisearch_doc.insert("title".to_string(), JsonValue::String("Test".to_string()));
+        let meilisearch_doc = json!({
+            "id": 123,
+            "title": "Test"
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         let doc = meilisearch_document_to_doc(meilisearch_doc);
         assert_eq!(doc.id, "123");
@@ -473,34 +477,31 @@ mod tests {
 
     #[test]
     fn test_meilisearch_response_to_search_results() {
-        let mut hit1 = JsonMap::new();
-        hit1.insert("id".to_string(), JsonValue::String("doc1".to_string()));
-        hit1.insert(
-            "title".to_string(),
-            JsonValue::String("Test Document 1".to_string()),
-        );
+        let hit1 = json!({
+            "id": "doc1",
+            "title": "Test Document 1"
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
-        let mut hit2 = JsonMap::new();
-        hit2.insert("id".to_string(), JsonValue::String("doc2".to_string()));
-        hit2.insert(
-            "title".to_string(),
-            JsonValue::String("Test Document 2".to_string()),
-        );
+        let hit2 = json!({
+            "id": "doc2",
+            "title": "Test Document 2"
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
-        let facet_distribution = {
-            let mut facets = JsonMap::new();
-            let mut category_facet = JsonMap::new();
-            category_facet.insert(
-                "electronics".to_string(),
-                JsonValue::Number(serde_json::Number::from(1)),
-            );
-            category_facet.insert(
-                "books".to_string(),
-                JsonValue::Number(serde_json::Number::from(1)),
-            );
-            facets.insert("category".to_string(), JsonValue::Object(category_facet));
-            facets
-        };
+        let facet_distribution = json!({
+            "category": {
+                "electronics": 1,
+                "books": 1
+            }
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         let meilisearch_response = MeilisearchSearchResponse {
             hits: vec![hit1, hit2],
@@ -592,17 +593,15 @@ mod tests {
 
     #[test]
     fn test_convert_meilisearch_facets_to_golem() {
-        let mut facets = JsonMap::new();
-        let mut category_facet = JsonMap::new();
-        category_facet.insert(
-            "electronics".to_string(),
-            JsonValue::Number(serde_json::Number::from(5)),
-        );
-        category_facet.insert(
-            "books".to_string(),
-            JsonValue::Number(serde_json::Number::from(3)),
-        );
-        facets.insert("category".to_string(), JsonValue::Object(category_facet));
+        let facets = json!({
+            "category": {
+                "electronics": 5,
+                "books": 3
+            }
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         let golem_facets = _convert_meilisearch_facets_to_golem(facets);
         assert_eq!(golem_facets.len(), 1);
