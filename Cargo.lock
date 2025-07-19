@@ -1004,6 +1004,96 @@ dependencies = [
 ]
 
 [[package]]
+name = "golem-search"
+version = "0.0.0"
+dependencies = [
+ "golem-rust",
+ "log",
+ "mime",
+ "nom",
+ "reqwest 0.12.15 (git+https://github.com/golemcloud/reqwest?branch=update-may-2025)",
+ "thiserror",
+ "wasi-logger",
+ "wit-bindgen 0.40.0",
+]
+
+[[package]]
+name = "golem-search-algolia"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "golem-rust",
+ "golem-search",
+ "log",
+ "reqwest 0.12.15 (git+https://github.com/golemcloud/reqwest?branch=update-may-2025)",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.40.0",
+]
+
+[[package]]
+name = "golem-search-elasticsearch"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "golem-rust",
+ "golem-search",
+ "log",
+ "reqwest 0.12.15 (git+https://github.com/golemcloud/reqwest?branch=update-may-2025)",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.40.0",
+]
+
+[[package]]
+name = "golem-search-meilisearch"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "golem-rust",
+ "golem-search",
+ "log",
+ "reqwest 0.12.15 (git+https://github.com/golemcloud/reqwest?branch=update-may-2025)",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.40.0",
+]
+
+[[package]]
+name = "golem-search-opensearch"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "golem-rust",
+ "golem-search",
+ "log",
+ "reqwest 0.12.15 (git+https://github.com/golemcloud/reqwest?branch=update-may-2025)",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.40.0",
+]
+
+[[package]]
+name = "golem-search-typesense"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "golem-rust",
+ "golem-search",
+ "log",
+ "reqwest 0.12.15 (git+https://github.com/golemcloud/reqwest?branch=update-may-2025)",
+ "serde",
+ "serde_json",
+ "urlencoding",
+ "wit-bindgen-rt 0.40.0",
+]
+
+[[package]]
 name = "golem-wasm-rpc"
 version = "1.3.0-dev.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
