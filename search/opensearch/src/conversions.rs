@@ -174,11 +174,11 @@ pub fn search_query_to_opensearch_request(query: SearchQuery) -> OpenSearchQuery
             let field_name = if facet == "year" {
                 facet.clone()
             } else {
-                format!("{}.keyword", facet)
+                format!("{facet}.keyword")
             };
 
             aggs.insert(
-                format!("{}_terms", facet),
+                format!("{facet}_terms"),
                 serde_json::json!({
                     "terms": {
                         "field": field_name,

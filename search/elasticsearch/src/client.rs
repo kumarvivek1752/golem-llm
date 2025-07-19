@@ -200,7 +200,7 @@ impl ElasticsearchApi {
 
         // Add authentication
         if let Some(api_key) = &self.api_key {
-            builder = builder.header("Authorization", format!("ApiKey {}", api_key));
+            builder = builder.header("Authorization", format!("ApiKey {api_key}"));
         } else if let (Some(username), Some(password)) = (&self.username, &self.password) {
             builder = builder.basic_auth(username, Some(password));
         }
@@ -225,7 +225,7 @@ impl ElasticsearchApi {
 
         let response = request
             .send()
-            .map_err(|e| internal_error(format!("Failed to create index: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to create index: {e}")))?;
 
         if response.status().is_success() {
             Ok(())
@@ -242,7 +242,7 @@ impl ElasticsearchApi {
         let response = self
             .create_request(Method::DELETE, &url)
             .send()
-            .map_err(|e| internal_error(format!("Failed to delete index: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to delete index: {e}")))?;
 
         if response.status().is_success() {
             Ok(())
@@ -259,7 +259,7 @@ impl ElasticsearchApi {
         let response = self
             .create_request(Method::GET, &url)
             .send()
-            .map_err(|e| internal_error(format!("Failed to list indices: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to list indices: {e}")))?;
 
         parse_response(response)
     }
@@ -278,7 +278,7 @@ impl ElasticsearchApi {
             .create_request(Method::PUT, &url)
             .json(document)
             .send()
-            .map_err(|e| internal_error(format!("Failed to index document: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to index document: {e}")))?;
 
         if response.status().is_success() {
             self.refresh_index(index_name)?;
@@ -302,14 +302,14 @@ impl ElasticsearchApi {
 
         // Add authentication
         if let Some(api_key) = &self.api_key {
-            builder = builder.header("Authorization", format!("ApiKey {}", api_key));
+            builder = builder.header("Authorization", format!("ApiKey {api_key}"));
         } else if let (Some(username), Some(password)) = (&self.username, &self.password) {
             builder = builder.basic_auth(username, Some(password));
         }
 
         let response = builder
             .send()
-            .map_err(|e| internal_error(format!("Failed to perform bulk operation: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to perform bulk operation: {e}")))?;
 
         parse_response(response)
     }
@@ -322,7 +322,7 @@ impl ElasticsearchApi {
         let response = self
             .create_request(Method::DELETE, &url)
             .send()
-            .map_err(|e| internal_error(format!("Failed to delete document: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to delete document: {e}")))?;
 
         if response.status().is_success() {
             Ok(())
@@ -339,7 +339,7 @@ impl ElasticsearchApi {
         let response = self
             .create_request(Method::GET, &url)
             .send()
-            .map_err(|e| internal_error(format!("Failed to get document: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to get document: {e}")))?;
 
         if response.status() == 404 {
             Ok(None)
@@ -369,7 +369,7 @@ impl ElasticsearchApi {
             .create_request(Method::POST, &url)
             .json(query)
             .send()
-            .map_err(|e| internal_error(format!("Failed to search: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to search: {e}")))?;
 
         parse_response(response)
     }
@@ -391,7 +391,7 @@ impl ElasticsearchApi {
             .create_request(Method::POST, &url)
             .json(query)
             .send()
-            .map_err(|e| internal_error(format!("Failed to search with scroll: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to search with scroll: {e}")))?;
 
         parse_response(response)
     }
@@ -401,11 +401,7 @@ impl ElasticsearchApi {
         scroll_id: &str,
         scroll_timeout: &str,
     ) -> Result<ElasticsearchScrollResponse, SearchError> {
-        trace!(
-            "Continuing scroll with ID: {}, timeout: {}",
-            scroll_id,
-            scroll_timeout
-        );
+        trace!("Continuing scroll with ID: {scroll_id}, timeout: {scroll_timeout}");
 
         let url = format!("{}/_search/scroll", self.base_url);
 
@@ -418,13 +414,13 @@ impl ElasticsearchApi {
             .create_request(Method::POST, &url)
             .json(&scroll_request)
             .send()
-            .map_err(|e| internal_error(format!("Failed to continue scroll: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to continue scroll: {e}")))?;
 
         parse_response(response)
     }
 
     pub fn clear_scroll(&self, scroll_id: &str) -> Result<(), SearchError> {
-        trace!("Clearing scroll with ID: {}", scroll_id);
+        trace!("Clearing scroll with ID: {scroll_id}");
 
         let url = format!("{}/_search/scroll", self.base_url);
 
@@ -436,7 +432,7 @@ impl ElasticsearchApi {
             .create_request(Method::DELETE, &url)
             .json(&clear_request)
             .send()
-            .map_err(|e| internal_error(format!("Failed to clear scroll: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to clear scroll: {e}")))?;
 
         if response.status().is_success() {
             Ok(())
@@ -458,7 +454,7 @@ impl ElasticsearchApi {
         let response = self
             .create_request(Method::GET, &url)
             .send()
-            .map_err(|e| internal_error(format!("Failed to get mappings: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to get mappings: {e}")))?;
 
         parse_response(response)
     }
@@ -476,7 +472,7 @@ impl ElasticsearchApi {
             .create_request(Method::PUT, &url)
             .json(mappings)
             .send()
-            .map_err(|e| internal_error(format!("Failed to put mappings: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to put mappings: {e}")))?;
 
         if response.status().is_success() {
             Ok(())
@@ -493,7 +489,7 @@ impl ElasticsearchApi {
         let response = self
             .create_request(Method::POST, &url)
             .send()
-            .map_err(|e| internal_error(format!("Failed to refresh index: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to refresh index: {e}")))?;
 
         if response.status().is_success() {
             Ok(())

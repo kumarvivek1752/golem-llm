@@ -277,7 +277,7 @@ impl OpenSearchApi {
                             );
                             std::thread::sleep(delay);
                         } else if !self.should_retry_error(error) {
-                            trace!("Request failed with non-retryable error: {:?}", error);
+                            trace!("Request failed with non-retryable error: {error:?}");
                             break;
                         }
                     }
@@ -301,7 +301,7 @@ impl OpenSearchApi {
 
         // Add authentication
         if let Some(api_key) = &self.api_key {
-            builder = builder.header("Authorization", format!("ApiKey {}", api_key));
+            builder = builder.header("Authorization", format!("ApiKey {api_key}"));
         } else if let (Some(username), Some(password)) = (&self.username, &self.password) {
             builder = builder.basic_auth(username, Some(password));
         }
@@ -322,7 +322,7 @@ impl OpenSearchApi {
 
         // Add authentication
         if let Some(api_key) = &self.api_key {
-            builder = builder.header("Authorization", format!("ApiKey {}", api_key));
+            builder = builder.header("Authorization", format!("ApiKey {api_key}"));
         } else if let (Some(username), Some(password)) = (&self.username, &self.password) {
             builder = builder.basic_auth(username, Some(password));
         }
@@ -495,11 +495,7 @@ impl OpenSearchApi {
         scroll_id: &str,
         scroll_timeout: &str,
     ) -> Result<OpenSearchScrollResponse, SearchError> {
-        trace!(
-            "Scrolling with ID: {} and timeout: {}",
-            scroll_id,
-            scroll_timeout
-        );
+        trace!("Scrolling with ID: {scroll_id} and timeout: {scroll_timeout}");
 
         let url = format!("{}/_search/scroll", self.base_url);
 
@@ -518,7 +514,7 @@ impl OpenSearchApi {
     }
 
     pub fn clear_scroll(&self, scroll_id: &str) -> Result<(), SearchError> {
-        trace!("Clearing scroll: {}", scroll_id);
+        trace!("Clearing scroll: {scroll_id}");
 
         let url = format!("{}/_search/scroll", self.base_url);
         let request_body = json!({

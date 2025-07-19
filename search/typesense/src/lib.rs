@@ -253,9 +253,9 @@ impl Guest for TypesenseComponent {
             Ok(stream) => stream,
             Err(panic_info) => {
                 if let Some(s) = panic_info.downcast_ref::<&str>() {
-                    trace!("[DEBUG] Panic message: {}", s);
+                    trace!("[DEBUG] Panic message: {s}");
                 } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                    trace!("[DEBUG] Panic message: {}", s);
+                    trace!("[DEBUG] Panic message: {s}");
                 } else {
                     trace!("[DEBUG] Panic message: <unknown>");
                 }

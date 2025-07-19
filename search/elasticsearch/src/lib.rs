@@ -104,7 +104,7 @@ impl ElasticsearchSearchStream {
                     Some(Some(search_results.hits))
                 }
                 Err(e) => {
-                    trace!("Initial scroll search failed: {:?}", e);
+                    trace!("Initial scroll search failed: {e:?}");
                     None // Signal to fallback to pagination
                 }
             }
@@ -135,7 +135,7 @@ impl ElasticsearchSearchStream {
                     Some(Some(search_results.hits))
                 }
                 Err(e) => {
-                    trace!("Scroll continuation failed: {:?}", e);
+                    trace!("Scroll continuation failed: {e:?}");
 
                     if let Some(scroll_id) = self.scroll_id.borrow().as_ref() {
                         let _ = self.client.clear_scroll(scroll_id);
@@ -173,7 +173,7 @@ impl ElasticsearchSearchStream {
                 Some(search_results.hits)
             }
             Err(e) => {
-                trace!("Pagination search failed: {:?}", e);
+                trace!("Pagination search failed: {e:?}");
                 self.finished.set(true);
                 Some(vec![])
             }

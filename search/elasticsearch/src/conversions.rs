@@ -17,7 +17,7 @@ pub fn doc_to_elasticsearch_document(doc: Doc) -> Result<Value, String> {
     }
 
     let content: Value = serde_json::from_str(&doc.content)
-        .map_err(|e| format!("Invalid JSON in document content: {}", e))?;
+        .map_err(|e| format!("Invalid JSON in document content: {e}"))?;
 
     let document = match content {
         Value::Object(mut obj) => {
@@ -211,7 +211,7 @@ pub fn search_query_to_elasticsearch_query(query: SearchQuery) -> ElasticsearchQ
                 {
                     let mut boosted_fields = Vec::new();
                     for (field, boost) in config.boost_fields {
-                        boosted_fields.push(format!("{}^{}", field, boost));
+                        boosted_fields.push(format!("{field}^{boost}"));
                     }
                     multi_match["fields"] = json!(boosted_fields);
                 }

@@ -75,7 +75,7 @@ impl OpenSearchSearchStream {
                     Some(Some(search_results.hits))
                 }
                 Err(e) => {
-                    trace!("Initial scroll search failed: {:?}", e);
+                    trace!("Initial scroll search failed: {e:?}");
                     None
                 }
             }
@@ -94,7 +94,7 @@ impl OpenSearchSearchStream {
                     Some(Some(search_results.hits))
                 }
                 Err(e) => {
-                    trace!("Scroll continuation failed: {:?}", e);
+                    trace!("Scroll continuation failed: {e:?}");
                     None
                 }
             }
@@ -128,7 +128,7 @@ impl OpenSearchSearchStream {
                 Some(search_results.hits)
             }
             Err(e) => {
-                trace!("Pagination search failed: {:?}", e);
+                trace!("Pagination search failed: {e:?}");
                 self.finished.set(true);
                 Some(vec![])
             }

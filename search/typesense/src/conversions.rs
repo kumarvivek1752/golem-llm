@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 
 pub fn doc_to_typesense_document(doc: Doc) -> Result<TypesenseDocument, String> {
     let mut fields: Map<String, Value> = serde_json::from_str(&doc.content)
-        .map_err(|e| format!("Failed to parse document content as JSON: {}", e))?;
+        .map_err(|e| format!("Failed to parse document content as JSON: {e}"))?;
 
     fields.insert("id".to_string(), Value::String(doc.id));
 
@@ -108,7 +108,7 @@ pub fn search_query_to_typesense_query(query: SearchQuery) -> TypesenseSearchQue
         if !config.boost_fields.is_empty() {
             let mut query_by_fields = Vec::new();
             for (field, boost) in config.boost_fields {
-                query_by_fields.push(format!("{}:{}", field, boost));
+                query_by_fields.push(format!("{field}:{boost}"));
             }
             typesense_query.query_by = Some(query_by_fields.join(","));
         }

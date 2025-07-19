@@ -49,7 +49,7 @@ impl TypesenseSearchApi {
             .create_request(Method::POST, &url)
             .json(schema)
             .send()
-            .map_err(|e| internal_error(format!("Failed to create collection: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to create collection: {e}")))?;
 
         parse_response(response)
     }
@@ -65,7 +65,7 @@ impl TypesenseSearchApi {
         let response = self
             .create_request(Method::DELETE, &url)
             .send()
-            .map_err(|e| internal_error(format!("Failed to delete collection: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to delete collection: {e}")))?;
 
         parse_response(response)
     }
@@ -78,7 +78,7 @@ impl TypesenseSearchApi {
         let response = self
             .create_request(Method::GET, &url)
             .send()
-            .map_err(|e| internal_error(format!("Failed to list collections: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to list collections: {e}")))?;
 
         parse_response(response)
     }
@@ -99,7 +99,7 @@ impl TypesenseSearchApi {
             .create_request(Method::POST, &url)
             .json(document)
             .send()
-            .map_err(|e| internal_error(format!("HTTP request failed: {}", e)))?;
+            .map_err(|e| internal_error(format!("HTTP request failed: {e}")))?;
 
         parse_response(response)
     }
@@ -130,7 +130,7 @@ impl TypesenseSearchApi {
             .header("Content-Type", "text/plain")
             .body(ndjson)
             .send()
-            .map_err(|e| internal_error(format!("HTTP request failed: {}", e)))?;
+            .map_err(|e| internal_error(format!("HTTP request failed: {e}")))?;
 
         parse_bulk_import_response(response)
     }
@@ -151,7 +151,7 @@ impl TypesenseSearchApi {
             .create_request(Method::POST, &url)
             .json(document)
             .send()
-            .map_err(|e| internal_error(format!("HTTP request failed: {}", e)))?;
+            .map_err(|e| internal_error(format!("HTTP request failed: {e}")))?;
 
         parse_response(response)
     }
@@ -171,7 +171,7 @@ impl TypesenseSearchApi {
         let response = self
             .create_request(Method::DELETE, &url)
             .send()
-            .map_err(|e| internal_error(format!("HTTP request failed: {}", e)))?;
+            .map_err(|e| internal_error(format!("HTTP request failed: {e}")))?;
 
         parse_response(response)
     }
@@ -191,7 +191,7 @@ impl TypesenseSearchApi {
         let response = self
             .create_request(Method::DELETE, &url)
             .send()
-            .map_err(|e| internal_error(format!("HTTP request failed: {}", e)))?;
+            .map_err(|e| internal_error(format!("HTTP request failed: {e}")))?;
 
         parse_response(response)
     }
@@ -212,13 +212,13 @@ impl TypesenseSearchApi {
         let full_url = if query_string.is_empty() {
             url
         } else {
-            format!("{}?{}", url, query_string)
+            format!("{url}?{query_string}")
         };
 
         let response = self
             .create_request(Method::GET, &full_url)
             .send()
-            .map_err(|e| internal_error(format!("HTTP request failed: {}", e)))?;
+            .map_err(|e| internal_error(format!("HTTP request failed: {e}")))?;
 
         parse_response(response)
     }
@@ -241,10 +241,10 @@ impl TypesenseSearchApi {
             params.push(format!("facet_by={}", urlencoding::encode(facet_by)));
         }
         if let Some(page) = query.page {
-            params.push(format!("page={}", page));
+            params.push(format!("page={page}"));
         }
         if let Some(per_page) = query.per_page {
-            params.push(format!("per_page={}", per_page));
+            params.push(format!("per_page={per_page}"));
         }
 
         Ok(params.join("&"))
@@ -262,7 +262,7 @@ impl TypesenseSearchApi {
             .create_request(Method::POST, &url)
             .json(searches)
             .send()
-            .map_err(|e| internal_error(format!("HTTP request failed: {}", e)))?;
+            .map_err(|e| internal_error(format!("HTTP request failed: {e}")))?;
 
         parse_response(response)
     }
@@ -318,10 +318,7 @@ fn parse_bulk_import_response(response: Response) -> Result<IndexDocumentsRespon
                         }
                     }
                     Err(e) => {
-                        println!(
-                            "[Typesense] Failed to parse NDJSON line: {} | line: {}",
-                            e, line
-                        );
+                        println!("[Typesense] Failed to parse NDJSON line: {e} | line: {line}");
                     }
                 }
             }

@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 
 pub fn doc_to_algolia_object(doc: Doc) -> Result<AlgoliaObject, String> {
     let content: Value = serde_json::from_str(&doc.content)
-        .map_err(|e| format!("Failed to parse document content as JSON: {}", e))?;
+        .map_err(|e| format!("Failed to parse document content as JSON: {e}"))?;
 
     Ok(AlgoliaObject {
         object_id: Some(doc.id),

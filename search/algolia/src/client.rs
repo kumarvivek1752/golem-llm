@@ -113,7 +113,7 @@ impl AlgoliaSearchApi {
         let response = self
             .create_request(Method::DELETE, &url)
             .send()
-            .map_err(|e| internal_error(format!("Failed to delete index: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to delete index: {e}")))?;
 
         parse_response(response)
     }
@@ -126,7 +126,7 @@ impl AlgoliaSearchApi {
         let response = self
             .create_request(Method::GET, &url)
             .send()
-            .map_err(|e| internal_error(format!("Failed to list indexes: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to list indexes: {e}")))?;
 
         parse_response(response)
     }
@@ -144,7 +144,7 @@ impl AlgoliaSearchApi {
             .create_request(Method::POST, &url)
             .json(object)
             .send()
-            .map_err(|e| internal_error(format!("Failed to save object: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to save object: {e}")))?;
 
         parse_response(response)
     }
@@ -171,7 +171,7 @@ impl AlgoliaSearchApi {
             .create_request(Method::POST, &url)
             .json(&batch_request)
             .send()
-            .map_err(|e| internal_error(format!("Failed to save objects: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to save objects: {e}")))?;
 
         parse_response(response)
     }
@@ -188,7 +188,7 @@ impl AlgoliaSearchApi {
         let response = self
             .create_request(Method::DELETE, &url)
             .send()
-            .map_err(|e| internal_error(format!("Failed to delete object: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to delete object: {e}")))?;
 
         parse_response(response)
     }
@@ -221,7 +221,7 @@ impl AlgoliaSearchApi {
             .create_request(Method::POST, &url)
             .json(&batch_request)
             .send()
-            .map_err(|e| internal_error(format!("Failed to delete objects: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to delete objects: {e}")))?;
 
         parse_response(response)
     }
@@ -246,7 +246,7 @@ impl AlgoliaSearchApi {
                     Ok(Some(object))
                 }
             }
-            Err(e) => Err(internal_error(format!("Failed to get object: {}", e))),
+            Err(e) => Err(internal_error(format!("Failed to get object: {e}"))),
         }
     }
 
@@ -264,7 +264,7 @@ impl AlgoliaSearchApi {
         match response {
             Ok(resp) => parse_response(resp),
             Err(e) => {
-                let error_msg = format!("Failed to search: {}: {}", url, e);
+                let error_msg = format!("Failed to search: {url}: {e}");
                 Err(internal_error(error_msg))
             }
         }
@@ -278,7 +278,7 @@ impl AlgoliaSearchApi {
         let response = self
             .create_request(Method::GET, &url)
             .send()
-            .map_err(|e| internal_error(format!("Failed to get settings: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to get settings: {e}")))?;
 
         parse_response(response)
     }
@@ -296,7 +296,7 @@ impl AlgoliaSearchApi {
             .create_request(Method::PUT, &url)
             .json(settings)
             .send()
-            .map_err(|e| internal_error(format!("Failed to set settings: {}", e)))?;
+            .map_err(|e| internal_error(format!("Failed to set settings: {e}")))?;
 
         parse_response(response)
     }
@@ -330,7 +330,7 @@ impl AlgoliaSearchApi {
                     }
                 }
                 Err(e) => {
-                    eprintln!("[Algolia] Error waiting for task: {:?}", e);
+                    eprintln!("[Algolia] Error waiting for task: {e:?}");
                 }
             }
             std::thread::sleep(std::time::Duration::from_millis(500));
