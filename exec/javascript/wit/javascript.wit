@@ -1,0 +1,6 @@
+package golem:exec-javascript@1.0.0;
+
+world exec-library {
+    include golem:exec/exec-library@1.0.0;
+}
+

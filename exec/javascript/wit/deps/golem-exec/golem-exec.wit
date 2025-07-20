@@ -1,0 +1,165 @@
+package golem:exec@1.0.0;
+
+interface types {
+  /// Supported language types and optional version
+  record language {
+    kind: language-kind,
+    version: option<string>,
+  }
+
+  enum language-kind {
+    javascript, python, 
+  }
+
+  /// Supported encodings for file contents
+  enum encoding {
+    utf8,
+    base64,
+    hex,
+  }
+
+  /// Code file to execute
+  record file {
+    name: string,
+    content: list<u8>,
+    encoding: option<encoding>, // defaults to utf8
+  }
+
+  /// Resource limits and execution constraints
+  record limits {
+    time-ms: option<u64>,
+    memory-bytes: option<u64>,
+    file-size-bytes: option<u64>,
+    max-processes: option<u32>,
+  }
+
+  /// Execution outcome per stage
+  record stage-result {
+    stdout: string,
+    stderr: string,
+    exit-code: option<s32>,
+    signal: option<string>,
+  }
+
+  /// Complete execution exec-result
+  record exec-result {
+    compile: option<stage-result>,
+    run: stage-result,
+    time-ms: option<u64>,
+    memory-bytes: option<u64>,
+  }
+
+  /// Execution error types
+  variant error {
+    unsupported-language,
+    compilation-failed(stage-result),
+    runtime-failed(stage-result),
+    timeout,
+    resource-exceeded,
+    internal(string),
+  }
+
+  /// Streamed event output during execution
+  variant exec-event {
+    stdout-chunk(list<u8>),
+    stderr-chunk(list<u8>),
+    finished(exec-result),
+    failed(error),
+  }
+}
+
+interface streams {
+  use types.{exec-event};
+  resource input-stream {
+    get-next: func() -> option<list<u8>>;
+  }
+
+  resource output-stream {
+    push: func(event: exec-event);
+    close: func();
+  }
+}
+
+
+interface executor {
+  use types.{language, file, limits, exec-result, error, exec-event};
+  use streams.{input-stream, output-stream};
+
+
+  /// Blocking, non-streaming execution
+  run: func(
+    lang: language,
+    files: list<file>,
+    stdin: option<string>,
+    args: list<string>,
+    env: list<tuple<string, string>>,
+    constraints: option<limits>
+  ) -> result<exec-result, error>;
+
+  /// Streaming execution with bidirectional I/O
+  run-streaming: func(
+    lang: language,
+    files: list<file>,
+    stdin: option<input-stream>,  
+    args: list<string>,
+    env: list<tuple<string, string>>,
+    constraints: option<limits>
+    ) -> output-stream;
+
+}
+
+
+interface session {
+  use types.{language, file, limits, exec-result, error, exec-event};
+  use streams.{input-stream, output-stream};
+
+
+  /// Session handle type
+  type session-handle = u32;
+
+  /// Create a new session
+  create: func(lang: language) -> result<session-handle, error>;
+
+  /// Upload file to session
+  upload: func(session: session-handle, file: file) -> result<_, error>;
+
+  /// Blocking execution
+  run: func(
+    session: session-handle,
+    entrypoint: string,
+    args: list<string>,
+    stdin: option<string>,
+    env: list<tuple<string, string>>,
+    constraints: option<limits>
+  ) -> result<exec-result, error>;
+
+  /// Streaming execution
+  run-streaming: func(
+    session: session-handle,
+    entrypoint: string,
+    args: list<string>,
+    stdin: option<input-stream>,
+    env: list<tuple<string, string>>,
+    constraints: option<limits>
+    ) -> output-stream;
+
+
+  /// Download file from session
+  download: func(session: session-handle, path: string) -> result<list<u8>, error>;
+
+  /// List files in session directory
+  list-files: func(session: session-handle, dir: string) -> result<list<string>, error>;
+
+  /// Set working directory for session
+  set-working-dir: func(session: session-handle, path: string) -> result<_, error>;
+
+  /// Close and cleanup session
+  close: func(session: session-handle);
+}
+
+
+world exec-library {
+  export types;
+  export executor;
+  export session;
+}

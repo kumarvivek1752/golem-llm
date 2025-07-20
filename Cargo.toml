@@ -14,7 +14,9 @@ members = [
     "search/algolia",
     "search/meilisearch",
     "search/opensearch",
-    "search/typesense"
+    "search/typesense",
+    "exec/exec",
+    "exec/javascript"
 ]
 
 [profile.release]

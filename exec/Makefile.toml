@@ -1,0 +1,98 @@
+[config]
+default_to_workspace = false
+skip_core_tasks = true
+
+[tasks.build]
+run_task = { name = [
+    "build-javascript",
+] }
+
+[tasks.build-portable]
+run_task = { name = [
+    "build-javascript-portable",
+] }
+
+[tasks.release-build]
+run_task = { name = [
+    "release-build-javascript",
+] }
+
+[tasks.release-build-portable]
+run_task = { name = [
+    "release-build-javascript-portable",
+] }
+
+
+[tasks.build-javascript]
+install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+command = "cargo-component"
+args = ["build", "-p", "golem-exec-javascript"]
+
+[tasks.build-javascript-portable]
+install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+command = "cargo-component"
+args = ["build", "-p", "golem-exec-javascript", "--no-default-features"]
+
+[tasks.release-build-javascript]
+install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+command = "cargo-component"
+args = ["build", "-p", "golem-exec-javascript", "--release"]
+
+[tasks.release-build-javascript-portable]
+install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+command = "cargo-component"
+args = [
+    "build",
+    "-p",
+    "golem-exec-javascript",
+    "--release",
+    "--no-default-features",
+]
+
+
+[tasks.wit-update]
+install_crate = { crate_name = "wit-deps-cli" }
+command = "wit-deps"
+args = ["update"]
+
+[tasks.wit]
+dependencies = ["wit-update"]
+
+script_runner = "@duckscript"
+script = """
+modules = array exec javascript
+for module in ${modules}
+    rm -r ${module}/wit/deps
+    mkdir ${module}/wit/deps/golem-exec
+    cp wit/golem-exec.wit ${module}/wit/deps/golem-exec/golem-exec.wit
+    cp wit/deps/wasi:io ${module}/wit/deps
+
+    echo "Copied WIT for module exec::${module}"
+end
+
+# Copy WIT files for integration tests
+rm -r ../exec-test/wit
+mkdir ../exec-test/wit/deps/golem-exec
+mkdir ../exec-test/wit/deps/io
+cp wit/golem-exec.wit ../exec-test/wit/deps/golem-exec/golem-exec.wit
+cp wit/deps/wasi:io/error.wit ../exec-test/wit/deps/io/error.wit
+cp wit/deps/wasi:io/poll.wit ../exec-test/wit/deps/io/poll.wit
+cp wit/deps/wasi:io/streams.wit ../exec-test/wit/deps/io/streams.wit
+cp wit/deps/wasi:io/world.wit ../exec-test/wit/deps/io/world.wit
+
+echo "Copied WIT for module test"
+"""
+
+[tasks.build-test-components]
+dependencies = ["build"]
+install_crate = "cargo-binstall"
+description = "Builds exec test components with golem-cli"
+script = '''
+cargo-binstall golem-cli@1.2.2-dev.11 --locked --no-confirm
+cargo-binstall wac-cli --locked --no-confirm
+cd ../test
+
+golem-cli --version
+golem-cli app clean
+golem-cli app build -b javascript-debug
+'''

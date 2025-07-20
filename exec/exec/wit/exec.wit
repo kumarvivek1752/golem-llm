@@ -1,0 +1,5 @@
+package golem:exec-library@1.0.0;
+
+world exec-library {
+    export golem:exec/exec@1.0.0;
+}
